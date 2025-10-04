@@ -325,3 +325,57 @@
 #  return(output)
 #}
 
+# ---------------------------------------------------------------
+
+#' Check taxonomic name updates
+#'
+#' This function compares a set of matched names (from the function
+#' \code{matching_threatenedperu()}) against the reference dataset
+#' \code{threatenedperu}. It determines how many of the queried names
+#' are no longer accepted and have been taxonomically updated.
+#'
+#' @param resultado A tibble or data frame returned by
+#'   \code{matching_threatenedperu()}, containing at least the column
+#'   \code{Matched.Name}.
+#' @param threatenedperu A tibble or data frame with taxonomic reference
+#'   information, containing at least the columns \code{scientific_name}
+#'   and \code{taxonomic_status}.
+#'
+#' @return A character string reporting the number and percentage of
+#'   names that have been taxonomically updated.
+#'
+#' @examples
+#' \dontrun{
+#' resultado <- matching_threatenedperu(c(
+#'   "Haageocereus acranthus subsp. olowinskianus",
+#'   "Tecoma estans var. velutyno",
+#'   "Haageocereus pseudomelanostele subsp. setosus",
+#'   "Cleistocactus pachycladus"
+#' )) |>
+#'   tibble::as_tibble()
+#'
+#' check_name_update(resultado, threatenedperu)
+#' }
+#'
+# check_name_update <- function(resultado, threatenedperu) {
+#
+#   # Filter matches
+#   check <- threatenedperu:::threatenedperu |>
+#     dplyr::semi_join(resultado, by = c("scientific_name" = "Matched.Name"))
+#
+#   # Calculations
+#   total <- nrow(check)
+#   updated <- sum(check$taxonomic_status != "Accepted", na.rm = TRUE)
+#   percentage <- round(100 * updated / total, 2)
+#
+#   # Build message in English
+#   message <- paste0(
+#     "Out of ", total, " names checked, ",
+#     updated, " (", percentage, "%) have been taxonomically updated.",
+#     "\nTo review these species, use: target_type = \"updated\" ",
+#     "based on the WCVP database."
+#   )
+#
+#   return(message)
+# }
+#

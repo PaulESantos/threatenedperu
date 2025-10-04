@@ -2,7 +2,7 @@
 % Please edit documentation in R/api_match.R
 \name{is_threatened_peru}
 \alias{is_threatened_peru}
-\title{Check if species are threatened in Peru}
+\title{Check if species are threatened listed in DS 043-2006-AG  Peru}
 \usage{
 is_threatened_peru(splist, target_type = "original", return_details = FALSE)
 }

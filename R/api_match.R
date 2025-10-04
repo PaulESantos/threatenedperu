@@ -1,4 +1,322 @@
-#' Check if species are threatened in Peru
+#' Matching for DS 043-2006-AG Species
+#'
+#' @description
+#' Performs consolidated matching that searches species names in both the original
+#' DS 043-2006-AG list (2006 names) and the updated nomenclature database. This
+#' ensures that users with updated names can still identify if their species are
+#' protected under the DS 043-2006-AG, even if the nomenclature has updated.
+#'
+#' @param splist Character vector of species names to check
+#' @param prioritize Character. Which result to prioritize when both databases
+#'   match: "original" (default) or "updated"
+#' @param return_details Logical. Return detailed matching information
+#'
+#' @return
+#' If return_details = FALSE: Character vector with consolidated threat status.
+#' If return_details = TRUE: Tibble with detailed reconciliation information.
+#'
+#' @details
+#' The function performs a two-stage search:
+#'
+#' 1. Searches in original DS 043-2006-AG (names as listed in 2006)
+#' 2. Searches in updated nomenclature database (current accepted names)
+#' 3. Consolidates results with clear indication of which database provided the match
+#' 4. Identifies if original names are now synonyms
+#'
+#' This approach handles cases where:
+#' - User provides original name from 2006: Found in original database
+#' - User provides updated name: Found in updated database and linked to DS 043-2006-AG list
+#' - Name matches in both: Returns most relevant result based on priority
+#' - Original name is now a synonym: Indicated with "(synonym)" marker
+#'
+#' @examples
+#' \dontrun{
+#' # Species with nomenclatural changes
+#' species <- c(
+#'   "Haageocereus acranthus subsp. olowinskianus",  # Original name
+#'   "Brassia ocanensis",                            # Updated name (was Ada)
+#'   "Ida locusta",                                  # Updated name
+#'   "Lycaste locusta",                              # Now a synonym
+#'   "Persea americana"                              # Not threatened
+#' )
+#'
+#' # Get consolidated status
+#' status <- is_ds043_2006_ag(species)
+#'
+#' # Get detailed information
+#' details <- is_ds043_2006_ag(species, return_details = TRUE)
+#' View(details)
+#' }
+#'
+#' @export
+is_ds043_2006_ag <- function(splist,
+                             prioritize = "original",
+                             return_details = FALSE) {
+
+  # ========================================================================
+  # SECTION 1: Input Validation
+  # ========================================================================
+
+  if (!is.character(splist)) {
+    stop("splist must be a character vector")
+  }
+
+  if (length(splist) == 0) {
+    warning("Empty species list provided")
+    return(if(return_details) tibble::tibble() else character(0))
+  }
+
+  if (!prioritize %in% c("original", "updated")) {
+    stop("prioritize must be 'original' or 'updated'")
+  }
+
+  # Check required datasets
+  if (!exists("threatenedperu")) {
+    stop("Dataset 'threatenedperu' not found")
+  }
+
+  if (!exists("threatenedperu_syn")) {
+    stop("Dataset 'threatenedperu_syn' not found")
+  }
+
+
+  # ========================================================================
+  # SECTION 2: Search in Original Database (DS 043-2006-AG 2006)
+  # ========================================================================
+
+  res_original <- matching_threatenedperu(
+    splist = splist,
+    target_df = "original"
+  )
+
+
+  # ========================================================================
+  # SECTION 3: Search in Updated Database (Current Nomenclature)
+  # ========================================================================
+
+  res_updated <- matching_threatenedperu(
+    splist = splist,
+    target_df = "updated"
+  )
+
+  # ========================================================================
+  # SECTION 4: Synonyms detection for original names
+  # ========================================================================
+
+  # Check which matched names are synonyms
+  synonyms_detected <- threatenedperu |>
+    dplyr::filter(
+      scientific_name %in% res_original$Matched.Name,
+      taxonomic_status == "Synonym"
+    ) |>
+    dplyr::select(
+      scientific_name,
+      accepted_name
+    )
+
+  # ========================================================================
+  # SECTION 5: Consolidate Results
+  # ========================================================================
+
+
+  consolidated <-
+    tibble::tibble(
+      Input.Name = splist,
+      sorter = 1:length(splist)
+    ) |>
+    dplyr::left_join(
+      res_original |>
+        dplyr::select(
+          sorter,
+          Original.Matched = Matched.Name,
+          Original.Status = Threat.Status,
+          Original.Category = threat_category,
+          Original.Match.Type = matched
+        ),
+      by = "sorter"
+    ) |>
+    dplyr::left_join(
+      res_updated |>
+        dplyr::select(
+          sorter,
+          Updated.Matched = Matched.Name,
+          Updated.Status = Threat.Status,
+          Updated.Category = threat_category,
+          Updated.Match.Type = matched
+        ),
+      by = "sorter"
+    ) |>
+    # Add synonym information
+    dplyr::left_join(
+      synonyms_detected |>
+        dplyr::rename(
+          Original.Matched = scientific_name,
+          Accepted.Name = accepted_name
+        ),
+      by = "Original.Matched"
+    ) |>
+    dplyr::mutate(
+      # Check if the original matched name is a synonym
+      Is.Synonym = !is.na(Accepted.Name),
+
+      # Determine which database found a threatened species
+      Found.In.Original = stringr::str_detect(Original.Status, "Threatened"),
+      Found.In.Updated = stringr::str_detect(Updated.Status, "Threatened"),
+
+      # Determine matching scenario
+      Match.Scenario = dplyr::case_when(
+        Found.In.Original & Found.In.Updated ~ "Both databases",
+        Found.In.Original & !Found.In.Updated ~ "Original only",
+        !Found.In.Original & Found.In.Updated ~ "Updated only",
+        TRUE ~ "Not found"
+      ),
+
+      # Consolidated matched name
+      Consolidated.Name = dplyr::case_when(
+        prioritize == "original" & Original.Matched != "---" ~ Original.Matched,
+        prioritize == "original" & Updated.Matched != "---" ~ Updated.Matched,
+        prioritize == "updated" & Updated.Matched != "---" ~ Updated.Matched,
+        prioritize == "updated" & Original.Matched != "---" ~ Original.Matched,
+        TRUE ~ "---"
+      ),
+
+      # Consolidated threat status with synonym indicator
+      Consolidated.Status = dplyr::case_when(
+        # If found as threatened in original AND is a synonym
+        Found.In.Original & Is.Synonym ~ paste0(Original.Status, " (synonym)"),
+        # If found as threatened in original but not a synonym
+        Found.In.Original & !Is.Synonym ~ Original.Status,
+        # If only found in updated, it's protected under updated nomenclature
+        Found.In.Updated ~ paste0(Updated.Status, " (updated name)"),
+        # Not found in either
+        TRUE ~ "Not threatened"
+      ),
+
+      # Consolidated category
+      Consolidated.Category = dplyr::case_when(
+        Found.In.Original ~ Original.Category,
+        Found.In.Updated ~ Updated.Category,
+        TRUE ~ NA_character_
+      ),
+
+      # Source of final decision
+      Final.Source = dplyr::case_when(
+        Found.In.Original & Is.Synonym ~ "DS 043-2006-AG (original, now synonym)",
+        Found.In.Original & !Is.Synonym ~ "DS 043-2006-AG (original)",
+        Found.In.Updated ~ "DS 043-2006-AG (updated nomenclature)",
+        TRUE ~ "Not in DS 043-2006-AG"
+      ),
+
+      # Is protected under DS 043-2006-AG?
+      Protected.DS043 = Found.In.Original | Found.In.Updated,
+
+      # Nomenclatural status
+      Nomenclature.Status = dplyr::case_when(
+        Found.In.Original & Is.Synonym ~ "Synonym (name updated)",
+        Found.In.Original & !Is.Synonym & !Found.In.Updated ~ "Original name (2006)",
+        !Found.In.Original & Found.In.Updated ~ "Name updated since 2006",
+        Found.In.Original & Found.In.Updated ~ "Found in both",
+        TRUE ~ "Not applicable"
+      )
+    ) |>
+    dplyr::select(
+      Input.Name,
+      Consolidated.Name,
+      Consolidated.Status,
+      Consolidated.Category,
+      Protected.DS043,
+      Is.Synonym,
+      Accepted.Name,
+      Final.Source,
+      Match.Scenario,
+      Nomenclature.Status,
+      Original.Matched,
+      Original.Status,
+      Updated.Matched,
+      Updated.Status
+    )
+
+  # ========================================================================
+  # SECTION 6: Return Results
+  # ========================================================================
+
+  if (return_details) {
+    return(consolidated)
+  } else {
+    return(consolidated$Consolidated.Status)
+  }
+}
+
+#' Simplified wrapper for consolidated matching
+#'
+#' @description
+#' Simplified interface for checking DS 043-2006-AG status with automatic
+#' consolidation of original and updated nomenclature.
+#'
+#' @param splist Character vector of species names
+#' @param return_simple Logical. If TRUE, returns only "Protected" or "Not protected"
+#'
+#' @return Character vector with protection status
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' species <- c("Brassia ocanensis", "Persea americana")
+#' check_ds043(species)
+#' }
+check_ds043 <- function(splist, return_simple = FALSE) {
+
+  results <- is_ds043_2006_ag(
+    splist = splist,
+    return_details = FALSE
+  )
+
+  if (return_simple) {
+    return(ifelse(
+      stringr::str_detect(results, "Threatened"),
+      "Protected by DS 043-2006-AG",
+      "Not protected"
+    ))
+  } else {
+    return(results)
+  }
+}
+
+#' Create comparison table between original and updated results
+#'
+#' @description
+#' Creates a side-by-side comparison table useful for understanding
+#' nomenclatural changes and their impact on DS 043-2006-AG status.
+#'
+#' @param splist Character vector of species names
+#'
+#' @return Tibble with comparison
+#' @export
+comparison_table_ds043 <- function(splist) {
+
+  consolidated <- is_ds043_2006_ag(
+    splist = splist,
+    return_details = TRUE
+  )
+
+  comparison <- consolidated |>
+    dplyr::select(
+      input_species = Input.Name,
+      match_2006_list = Original.Matched,
+      status_original = Original.Status,
+      match_updated_name = Updated.Matched,
+      status_updated = Updated.Status,
+      protected_ds_043 = Protected.DS043,
+      nomenclature_status = Nomenclature.Status
+    ) |>
+    dplyr::mutate(
+      protected_by_ds_043 = ifelse(protected_ds_043, "YES", "NO")
+    )
+
+  return(comparison)
+}
+
+#' Check if species are threatened listed in DS 043-2006-AG  Peru
 #'
 #' @description
 #' This function checks if a list of species names are threatened according to the
@@ -62,22 +380,9 @@ is_threatened_peru <- function(splist, target_type = "original", return_details 
     message("Some species names were empty or NA and were treated as 'Not threatened'")
   }
 
-  # Use internal data if target_df not provided
-    # This would load internal package data in a real package
-    target_df <- threatenedperu
-
-  # Validate target_df
-  required_cols <- c("genus", "species", "infraspecies", "threat_category")
-  if (!all(required_cols %in% colnames(target_df))) {
-    stop("target_df must contain columns: ",
-         paste(required_cols, collapse = ", "))
-  }
-
   # Perform detailed matching
   match_df <- matching_threatenedperu(splist_clean, target_df = target_type)
-if(target_type == "original"){
-  message(check_name_update(match_df, threatenedperu))
-}
+
 
   # Create result vector for all original inputs
   result_vector <- rep("Not threatened", length(splist))
@@ -103,110 +408,3 @@ if(target_type == "original"){
   }
 }
 
-#' Get threat categories summary
-#'
-#' @description
-#' Get a summary of threat categories for a list of species
-#'
-#' @param splist A character vector containing species names
-#' @param target_df A tibble representing the threatened species database
-#'
-#' @return A tibble with threat category counts
-#'
-#' @export
-
-get_threat_summary <- function(splist, target_df = NULL) {
-
-  if (is.null(target_df)) {
-    stop("target_df must be provided. Use prepare_threatened_data() to prepare your dataset first.")
-  }
-
-  threat_status <- is_threatened_peru(splist)
-threat_status
-  summary_table <- tibble::tibble(Threat_Status = threat_status) |>
-    dplyr::count(Threat_Status, name = "Count", sort = TRUE) |>
-    dplyr::mutate(
-      Percentage = round(100 * Count / sum(Count), 2),
-      Category = dplyr::case_when(
-        Threat_Status == "Not threatened" ~ "Not threatened",
-        stringr::str_detect(Threat_Status, "CR") ~ "Critically Endangered",
-        stringr::str_detect(Threat_Status, "EN") ~ "Endangered",
-        stringr::str_detect(Threat_Status, "VU") ~ "Vulnerable",
-        stringr::str_detect(Threat_Status, "NT") ~ "Near Threatened",
-        TRUE ~ "Unknown category"
-      )
-    ) |>
-    dplyr::relocate(Category, .after = Threat_Status)
-summary_table
-  return(summary_table)
-}
-
-#' Check if a single species is threatened
-#'
-#' @description
-#' Convenience function to check the threat status of a single species
-#'
-#' @param species_name A character string with a single species name
-#' @param target_df A tibble representing the threatened species database
-#'
-#' @return A character string with the threat status
-#'
-#' @export
-#'
-
-is_single_species_threatened <- function(species_name, target_df = NULL) {
-
-  if (!is.character(species_name) || length(species_name) != 1) {
-    stop("species_name must be a single character string")
-  }
-
-  result <- is_threatened_peru(species_name, target_df)
-  return(result[1])
-}
-
-#' Find threatened species by family
-#'
-#' @description
-#' Find all threatened species within a specific plant family from your input list
-#'
-#' @param splist A character vector containing species names
-#' @param family_name A character string with the family name to filter by
-#' @param target_df A tibble representing the threatened species database
-#'
-#' @return A tibble with threatened species from the specified family
-#'
-#' @export
-#'
-
-find_threatened_by_family <- function(splist, family_name, target_df = NULL) {
-
-  if (is.null(target_df)) {
-    stop("target_df must be provided. Use prepare_threatened_data() to prepare your dataset first.")
-  }
-
-  if (!is.character(family_name) || length(family_name) != 1) {
-    stop("family_name must be a single character string")
-  }
-
-  family_name <- toupper(trimws(family_name))
-
-  # Get detailed results
-  detailed_results <- is_threatened_peru(splist, target_df, return_details = TRUE)
-
-  # Filter for threatened species and join with family information
-  threatened_in_family <- detailed_results |>
-    dplyr::filter(stringr::str_detect(Threat.Status, "Threatened")) |>
-    dplyr::left_join(
-      target_df |> dplyr::select(genus, species, family, threat_Category),
-      by = c("Matched.Genus" = "genus", "Matched.Species" = "species")
-    ) |>
-    dplyr::filter(Family == family_name) |>
-    dplyr::select(Orig.Name, Matched.Name, Family, Threat.Status, threat_category) |>
-    dplyr::arrange(Threat_Category, Orig.Name)
-
-  if (nrow(threatened_in_family) == 0) {
-    message("No threatened species found in family ", family_name)
-  }
-
-  return(threatened_in_family)
-}

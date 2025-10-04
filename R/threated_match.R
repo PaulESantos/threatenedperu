@@ -427,11 +427,6 @@ matching_threatenedperu <- function(splist, target_df = "original"){
     msg = "Final output row count does not match input"
   )
 
-  if(target_df == "original"){
-    message(check_name_update(output, threatenedperu))
-  }
-
-
   return(output)
 }
 
