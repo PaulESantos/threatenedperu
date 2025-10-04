@@ -13,44 +13,50 @@ knitr::opts_chunk$set(
 )
 ```
 
-# ds43
+# threatenedperu
 
 <!-- badges: start -->
 [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
-[![CRAN status](https://www.r-pkg.org/badges/version/ds43)](https://CRAN.R-project.org/package=ds43)
+[![CRAN status](https://www.r-pkg.org/badges/version/threatenedperu)](https://CRAN.R-project.org/package=threatenedperu)
 <!-- badges: end -->
 
-The goal of ds43 is to ...
+## Overview
+
+`threatenedperu` provides tools to work with threatened plant species data from Peru as categorized under **Decreto Supremo N° 043-2006-AG**. The package contains data on 777 threatened species distributed across four IUCN threat categories, with sophisticated name matching algorithms that handle taxonomic synonyms and nomenclatural changes since the list where stablished.
+
+## Key Features
+
+-  Comprehensive name matching: Direct, fuzzy, and suffix-based matching algorithms
+-  Synonym resolution: Automatic handling of nomenclatural changes since 2006
+-  Complete threat data: 777 species across CR, EN, VU, and NT categories
+-  Validation tools: Check species protection status against official document
+-  Conservation workflows: Tools for reports, management plans, and monitoring
+
+## Legal Framework
+
+The package implements the official categorization from:
+**Decreto Supremo N° 043-2006-AG (July 13, 2006)** **Aprueban Categorización de Especies Amenazadas de Flora Silvestre**
+
+- Categories (following IUCN criteria):
+
+- CR `(Critically Endangered)`: 
+- EN `(Endangered)`: 
+- VU `(Vulnerable)`: 
+- NT `(Near Threatened)`: 
 
 ## Installation
 
-You can install the development version of ds43 like so:
+Install from CRAN:
+
+```r
+install.packages("peruflorads43")
+
+# or
+
+pak::pak("peruflorads43")
+```
+Or install the development version from GitHub:
 
 ``` r
-# FILL THIS IN! HOW CAN PEOPLE INSTALL YOUR DEV PACKAGE?
+pak::pak("PaulEsantos/peruflorads43")
 ```
-
-## Example
-
-This is a basic example which shows you how to solve a common problem:
-
-```{r example}
-library(ds43)
-## basic example code
-```
-
-What is special about using `README.Rmd` instead of just `README.md`? You can include R chunks like so:
-
-```{r cars}
-summary(cars)
-```
-
-You'll still need to render `README.Rmd` regularly, to keep `README.md` up-to-date. `devtools::build_readme()` is handy for this.
-
-You can also embed plots, for example:
-
-```{r pressure, echo = FALSE}
-plot(pressure)
-```
-
-In that case, don't forget to commit and push the resulting figure files, so they display on GitHub and CRAN.

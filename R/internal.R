@@ -1,7 +1,19 @@
 #' @keywords internal
 .names_standardize <- function(splist) {
+
+  # Identificar NAs desde el inicio
+  na_positions <- is.na(splist)
+
+  # Trabajar solo con valores no-NA
+  splist_clean <- splist[!na_positions]
+
+  # Si todo es NA, retornar el vector original
+  if (length(splist_clean) == 0) {
+    return(splist)
+  }
+
   # Convertir todo a mayúsculas
-  fixed1 <- toupper(splist)
+  fixed1 <- toupper(splist_clean)
 
   # Eliminar 'CF.' y 'AFF.'
   fixed2 <- gsub("CF\\.", "", fixed1)
@@ -21,8 +33,10 @@
   # Manejar híbridos (eliminar 'X' y '\u00d7')
   fixed9 <- gsub("(^X )|( X$)|( X )|(^\u00d7 )|( \u00d7$)|( \u00d7 )", " ", fixed8)
   hybrids <- fixed8 == fixed9
-  if (!all(hybrids)) {
-    sp_hybrids <- splist[!hybrids]
+
+  # Verificar híbridos (excluyendo NAs en la comparación)
+  if (!all(hybrids, na.rm = TRUE)) {
+    sp_hybrids <- splist_clean[!hybrids]
     warning(paste("The 'X' sign indicating hybrids have been removed in the",
                   "following names before search:",
                   paste(paste0("'", sp_hybrids, "'"), collapse = ", ")),
@@ -41,8 +55,14 @@
     if(length(whichs) == 0) break
   }
 
-  return(fixed10)
+  # Reconstruir el vector completo manteniendo NAs en sus posiciones originales
+  result <- character(length(splist))
+  result[na_positions] <- NA_character_
+  result[!na_positions] <- fixed10
+
+  return(result)
 }
+
 
 #------------------------------------------------
 #' @keywords internal
@@ -256,17 +276,42 @@ str_to_simple_cap <- function(text) {
 #' @keywords internal
 .check_binomial <- function(splist_class, splist) {
 
-  missing_bino <- which(apply(splist_class[, 3:4, drop = FALSE],
-                              1,
-                              function(x) {any(is.na(x))}))
-  if (length(missing_bino) > 0) {
-    message(paste0("The species list (splist) should only include binomial names.",
-                   " The following names were submitted at the genus level: ",
-                   paste(paste0("'", splist[missing_bino], "'"),
-                         collapse = ", ")))
+  # Identificar posiciones con NA en la lista original
+  na_positions <- which(is.na(splist))
+  #na_positions
 
+  # Identificar nombres que solo tienen género (especies sin epíteto específico)
+  # Excluir las filas que corresponden a NA en la lista original
+  missing_species <- which(apply(splist_class[, 3:4, drop = FALSE],
+                                 1,
+                                 function(x) {any(is.na(x))}))
+
+  #missing_species
+  # Separar NAs de nombres incompletos
+  genuine_missing <- setdiff(missing_species, na_positions)
+  #genuine_missing
+  # Reportar nombres a nivel de género (excluyendo NAs)
+  if (length(genuine_missing) > 0) {
+    genus_level_names <- splist[genuine_missing]
+    message(paste0("The species list (splist) should only include binomial names. ",
+                   "The following names were submitted at the genus level: ",
+                   paste(paste0("'", genus_level_names, "'"),
+                         collapse = ", ")))
   }
-  return(missing_bino)
+
+  # Reportar NAs si existen
+  if (length(na_positions) > 0) {
+    message(paste0("The species list (splist) contains ",
+                   length(na_positions),
+                   " NA value(s) at position(s): ",
+                   paste(na_positions, collapse = ", "),
+                   ". \n These will be excluded from matching."))
+  }
+
+  # Retornar todas las posiciones problemáticas
+  all_problematic <- sort(c(genuine_missing, na_positions))
+
+  return(all_problematic)
 }
 
 # ---------------------------------------------------------------
@@ -302,7 +347,6 @@ str_to_simple_cap <- function(text) {
 #'
 #' @keywords internal
 check_name_update <- function(resultado, threatenedperu) {
-  library(dplyr)
 
   # Filter matches
   check <- threatenedperu |>
@@ -338,4 +382,10 @@ utils::globalVariables(c("%>%", "Genus", "Genus.x", "Matched.Genus",
                          "nombre_comun", "author", "infraespecie", "categoria", "familia",
                          "Category", "Count", "Original.Index", "Threat.Status", "family",
                          "genus", "semi_join", "species", "threat_Category",
-                         "threat_category", "threatenedperu"))
+                         "threat_category", "threatenedperu",
+                         "Accepted.Name", "Consolidated.Category", "Consolidated.Name",
+    "Consolidated.Status", "Final.Source", "Found.In.Original", "Found.In.Updated",
+    "Input.Name", "Is.Synonym", "Match.Scenario", "Nomenclature.Status",
+    "Original.Matched", "Original.Status", "Protected.DS043", "Updated.Matched",
+    "Updated.Status", "accepted_name", "matched", "protected_ds_043",
+    "taxonomic_status"))

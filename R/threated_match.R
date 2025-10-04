@@ -140,7 +140,7 @@ matching_threatenedperu <- function(splist, target_df = "original"){
 
   if(length(non_binomial) != 0){
     df <- splist_class[-non_binomial,]
-    df$sorter <- 1:nrow(df)
+   # df$sorter <- 1:nrow(df)
   } else{
     df <- splist_class
   }
@@ -284,7 +284,7 @@ matching_threatenedperu <- function(splist, target_df = "original"){
   }
 
   # ---------------------------------------------------------------
-  # Handle Genus-level Names
+  # Handle Genus-level Names and NA values
   # ---------------------------------------------------------------
   if(length(non_binomial) != 0){
     genus_level <- matrix(nrow = length(non_binomial),
@@ -426,6 +426,11 @@ matching_threatenedperu <- function(splist, target_df = "original"){
     nrow(splist_class) == nrow(output),
     msg = "Final output row count does not match input"
   )
+
+  if(target_df == "original"){
+    message(check_name_update(output, threatenedperu))
+  }
+
 
   return(output)
 }

@@ -59,7 +59,7 @@ is_threatened_peru <- function(splist, target_type = "original", return_details 
   }
 
   if (length(splist_clean) != length(splist)) {
-    warning("Some species names were empty or NA and were treated as 'Not threatened'")
+    message("Some species names were empty or NA and were treated as 'Not threatened'")
   }
 
   # Use internal data if target_df not provided
@@ -84,7 +84,11 @@ if(target_type == "original"){
 
   # Fill in results for valid species names
   valid_indices <- which(!is.na(splist) & nchar(trimws(splist)) > 0)
-  result_vector[valid_indices] <- match_df$Threat.Status
+
+  result_vector[valid_indices] <- match_df$Threat.Status[valid_indices]
+  # Asignar algo en los índices inválidos (ejemplo: "NA")
+  invalid_indices <- setdiff(seq_along(splist), valid_indices)
+  result_vector[invalid_indices] <- "Not threatened"
 
   if (return_details) {
     # Add back the original indices and return full results
