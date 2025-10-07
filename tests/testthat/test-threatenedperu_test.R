@@ -7,8 +7,8 @@ test_that("is_threatened_peru works correctly", {
   results <- is_threatened_peru(test_species)
 
   expect_length(results, 3)
-  expect_equal(results[1], "Threatened - CR")
-  expect_equal(results[2], "Threatened - VU")
+  expect_equal(results[1], "CR")
+  expect_equal(results[2], "VU")
   expect_equal(results[3], "Not threatened")
 
   # Test with return_details = TRUE

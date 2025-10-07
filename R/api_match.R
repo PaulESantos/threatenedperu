@@ -160,8 +160,8 @@ is_ds043_2006_ag <- function(splist,
       Is.Synonym = !is.na(Accepted.Name),
 
       # Determine which database found a threatened species
-      Found.In.Original = stringr::str_detect(Original.Status, "Threatened"),
-      Found.In.Updated = stringr::str_detect(Updated.Status, "Threatened"),
+      Found.In.Original = stringr::str_detect(Original.Status, "[A-Z]{2,}"),
+      Found.In.Updated = stringr::str_detect(Updated.Status, "[A-Z]{2,}"),
 
       # Determine matching scenario
       Match.Scenario = dplyr::case_when(

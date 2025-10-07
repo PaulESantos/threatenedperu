@@ -155,7 +155,7 @@ matching_threatenedperu <- function(splist, target_df = "original"){
         Matched.Infraspecies = as.character(NA)
       )
   }
-
+#df
   # ========================================================================
   # SECTION 3: Hierarchical Matching Pipeline
   # ========================================================================
@@ -372,8 +372,8 @@ matching_threatenedperu <- function(splist, target_df = "original"){
     dplyr::mutate(Threat.Status = dplyr::case_when(
       is.na(Matched.Genus) & is.na(Matched.Species) & is.na(Matched.Infraspecies) ~
         'Not threatened',
-      !is.na(threat_category) ~ paste('Threatened -', threat_category),
-      Comp.Rank == TRUE & matched == TRUE ~ 'Threatened - Unknown category',
+      !is.na(threat_category) ~ threat_category,
+     # Comp.Rank == TRUE & matched == TRUE ~ 'Threatened - Unknown category',
       TRUE ~ 'Not threatened'
     )) |>
 
