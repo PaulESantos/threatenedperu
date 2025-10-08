@@ -330,7 +330,8 @@ matching_threatenedperu <- function(splist, target_df = "original"){
     # Join with threat category information
     dplyr::left_join(
       target_prepared |>
-        dplyr::select(genus, species, infraspecies, threat_category),
+        dplyr::select(genus, species, infraspecies, threat_category), #|>
+       # dplyr::distinct(genus, species, infraspecies, .keep_all = TRUE),
       by = c("Matched.Genus" = "genus",
              "Matched.Species" = "species",
              "Matched.Infraspecies" = "infraspecies")
@@ -400,11 +401,11 @@ matching_threatenedperu <- function(splist, target_df = "original"){
   # Remove specific duplicate matches and edge cases
  if(target_df == "original"){
    output <- output |>
-     dplyr::filter(
-       !(stringr::str_detect(Matched.Name,
-                             "Haageocereus acranthus subsp. olowinskianus") &
-           threat_category != "VU")
-     ) |>
+     #dplyr::filter(
+      # !(stringr::str_detect(Matched.Name,
+       #                      "Haageocereus acranthus subsp. olowinskianus") &
+        #   threat_category != "VU")
+    # ) |>
      dplyr::group_by(Matched.Name) |>
      dplyr::distinct() |>
      dplyr::ungroup()

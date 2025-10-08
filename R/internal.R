@@ -25,14 +25,28 @@
   # Cambiar guiones bajos por espacios
   fixed5 <- gsub("_", " ", fixed4)
 
-  # Estandarizar 'VAR', 'F.', 'SUBSP.'
+  # Estandarizar categorías infraespecíficas
+  # 1. VAR y VAR.
   fixed6 <- gsub(" VAR ", " VAR. ", fixed5)
+  fixed6 <- gsub(" VAR\\. ", " VAR. ", fixed6)  # Asegurar solo un punto
+
+  # 2. FORMA, F, F.
   fixed7 <- gsub(" (F|FO|FO\\.|FORM|FORM\\.|FORMA|FORMA\\.) ", " F. ", fixed6)
-  fixed8 <- gsub(" (SSP|SPP|SUBSP|SP|SP\\.|SPP\\.) ", " SUBSP. ", fixed7)
+
+  # 3. SUBSP, SSP, SPP, etc.
+  fixed8 <- gsub(" (SSP|SSP\\.|SPP|SPP\\.|SUBSP|SUBSP\\.|SP|SP\\.) ", " SUBSP. ", fixed7)
+
+  # 4. SUBVAR y SUBVAR. (IMPORTANTE: debe ir después de VAR)
+  fixed9 <- gsub(" SUBVAR ", " SUBVAR. ", fixed8)
+  fixed9 <- gsub(" SUBVAR\\. ", " SUBVAR. ", fixed9)  # Asegurar solo un punto
+
+  # 5. SUBF y SUBF. (IMPORTANTE: debe ir después de F)
+  fixed9 <- gsub(" SUBF ", " SUBF. ", fixed9)
+  fixed9 <- gsub(" SUBF\\. ", " SUBF. ", fixed9)  # Asegurar solo un punto
 
   # Manejar híbridos (eliminar 'X' y '\u00d7')
-  fixed9 <- gsub("(^X )|( X$)|( X )|(^\u00d7 )|( \u00d7$)|( \u00d7 )", " ", fixed8)
-  hybrids <- fixed8 == fixed9
+  fixed10 <- gsub("(^X )|( X$)|( X )|(^\u00d7 )|( \u00d7$)|( \u00d7 )", " ", fixed9)
+  hybrids <- fixed9 == fixed10
 
   # Verificar híbridos (excluyendo NAs en la comparación)
   if (!all(hybrids, na.rm = TRUE)) {
@@ -44,21 +58,21 @@
   }
 
   # Eliminar múltiples espacios
-  fixed10 <- gsub(" +", " ", fixed9)
+  fixed11 <- gsub(" +", " ", fixed10)
 
-  # Eliminar símbolos no alfabéticos al inicio
+  # Eliminar símbolos no alfabéticos al inicio (CORREGIDO: usar fixed11 en ambos lados)
   for(j in 1:100) {
-    whichs <- which(grepl("^[^A-Z]", fixed10))
+    whichs <- which(grepl("^[^A-Z]", fixed11))
     if(length(whichs) > 0)
-      fixed10[whichs] <- gsub("^[^A-Z]", "", fixed10[whichs])
-    whichs <- which(grepl("^[^A-Z]", fixed10))
+      fixed11[whichs] <- gsub("^[^A-Z]", "", fixed11[whichs])  # CORREGIDO
+    whichs <- which(grepl("^[^A-Z]", fixed11))
     if(length(whichs) == 0) break
   }
 
   # Reconstruir el vector completo manteniendo NAs en sus posiciones originales
   result <- character(length(splist))
   result[na_positions] <- NA_character_
-  result[!na_positions] <- fixed10
+  result[!na_positions] <- fixed11  # CORREGIDO: usar fixed11
 
   return(result)
 }
@@ -184,32 +198,51 @@
   df <- as.data.frame(df)
   df$sorter <- 1:nrow(df)
 
-  # Crear las nuevas columnas infraspecie e infra_rank
-  df$Orig.Infraspecies <- with(df, ifelse(Subspecies != "", Subspecies,
-                                          ifelse(Variety != "", Variety,
-                                                 ifelse(Subvariety != "", Subvariety,
-                                                        ifelse(Forma != "", Forma,
-                                                               ifelse(Subforma != "", Subforma, NA_character_))))))
+  # Vector de columnas infraespecíficas en orden de prioridad
+  infra_cols <- c("Subspecies", "Variety", "Subvariety", "Forma", "Subforma")
+  infra_ranks <- c("SUBSP.", "VAR.", "SUBVAR.", "F.", "SUBF.")
 
-  df$Infra.Rank <- with(df, ifelse(Subspecies != "", "SUBSP.",
-                                   ifelse(Variety != "", "VAR.",
-                                          ifelse(Subvariety != "", "SUBVAR.",
-                                                 ifelse(Forma != "", "F.",
-                                                        ifelse(Subforma != "", "SUBF.", NA_character_))))))
+  # Inicializar columnas para dos niveles
+  df$Orig.Infraspecies <- NA_character_
+  df$Infra.Rank <- NA_character_
+  df$Orig.Infraspecies_2 <- NA_character_
+  df$Infra.Rank_2 <- NA_character_
 
-  # Añadir la columna rank
+  # Iterar por cada fila
+  for (i in 1:nrow(df)) {
+    # Encontrar categorías infraespecíficas no vacías
+    non_empty <- which(df[i, infra_cols] != "")
+
+    # Asignar primer nivel (si existe)
+    if (length(non_empty) >= 1) {
+      first_idx <- non_empty[1]
+      df$Orig.Infraspecies[i] <- df[i, infra_cols[first_idx]]
+      df$Infra.Rank[i] <- infra_ranks[first_idx]
+    }
+
+    # Asignar segundo nivel (si existe)
+    if (length(non_empty) >= 2) {
+      second_idx <- non_empty[2]
+      df$Orig.Infraspecies_2[i] <- df[i, infra_cols[second_idx]]
+      df$Infra.Rank_2[i] <- infra_ranks[second_idx]
+    }
+  }
+
+  # Añadir la columna Rank
   df$Rank <- ifelse(!is.na(df$Orig.Genus) & !is.na(df$Orig.Species) & is.na(df$Orig.Infraspecies), 2,
-                    ifelse(!is.na(df$Orig.Genus) & !is.na(df$Orig.Species) & !is.na(df$Orig.Infraspecies), 3,
-                           ifelse(is.na(df$Orig.Species) & is.na(df$Orig.Infraspecies), 1, NA)))
+                    ifelse(!is.na(df$Orig.Genus) & !is.na(df$Orig.Species) & !is.na(df$Orig.Infraspecies) & is.na(df$Orig.Infraspecies_2), 3,
+                           ifelse(!is.na(df$Orig.Genus) & !is.na(df$Orig.Species) & !is.na(df$Orig.Infraspecies) & !is.na(df$Orig.Infraspecies_2), 4,
+                                  ifelse(is.na(df$Orig.Species) & is.na(df$Orig.Infraspecies), 1, NA))))
 
-  # Reordenar las columnas para que infraspecie e infra_rank estén antes de Subspecies
-  column_order <- c( "sorter","Orig.Name", "Orig.Genus", "Orig.Species", "Author",
-                     "Orig.Infraspecies", "Infra.Rank", "Rank")
-
+  # Reordenar las columnas
+  column_order <- c("sorter", "Orig.Name", "Orig.Genus", "Orig.Species", "Author",
+                    "Orig.Infraspecies", "Infra.Rank",
+                    "Orig.Infraspecies_2", "Infra.Rank_2", "Rank")
   df <- df[, column_order]
 
   return(df)
 }
+
 
 # ---------------------------------------------------------------
 #' @keywords internal

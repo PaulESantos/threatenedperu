@@ -59,7 +59,7 @@ fuzzy_match_genus <- function(df, target_df = NULL){
     ## Save ambiguous genera for manual curation:
     matched_temp |>
       dplyr::filter(dplyr::n() > 1) |>
-      dplyr::select(Genus.x, species, Matched.Genus) |>
+      dplyr::select(Orig.Genus, Orig.Species, Matched.Genus) |>
       readr::write_csv(file = 'threatenedperu_ambiguous_genera.csv') ##
     ## Alternative Idea: prompt the user to insert the correct name. Caution here however because this might cause trouble with unit testing
   }
