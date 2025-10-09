@@ -194,33 +194,27 @@
 #' @keywords internal
 # Definir la función para transformar el data frame
 .transform_split_classify <- function(df) {
-  # Convertir a data frame
   df <- as.data.frame(df)
   df$sorter <- 1:nrow(df)
 
-  # Vector de columnas infraespecíficas en orden de prioridad
   infra_cols <- c("Subspecies", "Variety", "Subvariety", "Forma", "Subforma")
   infra_ranks <- c("SUBSP.", "VAR.", "SUBVAR.", "F.", "SUBF.")
 
-  # Inicializar columnas para dos niveles
+  # Siempre inicializar ambos niveles
   df$Orig.Infraspecies <- NA_character_
   df$Infra.Rank <- NA_character_
   df$Orig.Infraspecies_2 <- NA_character_
   df$Infra.Rank_2 <- NA_character_
 
-  # Iterar por cada fila
   for (i in 1:nrow(df)) {
-    # Encontrar categorías infraespecíficas no vacías
     non_empty <- which(df[i, infra_cols] != "")
 
-    # Asignar primer nivel (si existe)
     if (length(non_empty) >= 1) {
       first_idx <- non_empty[1]
       df$Orig.Infraspecies[i] <- df[i, infra_cols[first_idx]]
       df$Infra.Rank[i] <- infra_ranks[first_idx]
     }
 
-    # Asignar segundo nivel (si existe)
     if (length(non_empty) >= 2) {
       second_idx <- non_empty[2]
       df$Orig.Infraspecies_2[i] <- df[i, infra_cols[second_idx]]
@@ -228,13 +222,12 @@
     }
   }
 
-  # Añadir la columna Rank
+  # Añadir Rank (siempre calcular Rank 4 en la entrada, luego se filtra si no se usa)
   df$Rank <- ifelse(!is.na(df$Orig.Genus) & !is.na(df$Orig.Species) & is.na(df$Orig.Infraspecies), 2,
                     ifelse(!is.na(df$Orig.Genus) & !is.na(df$Orig.Species) & !is.na(df$Orig.Infraspecies) & is.na(df$Orig.Infraspecies_2), 3,
                            ifelse(!is.na(df$Orig.Genus) & !is.na(df$Orig.Species) & !is.na(df$Orig.Infraspecies) & !is.na(df$Orig.Infraspecies_2), 4,
                                   ifelse(is.na(df$Orig.Species) & is.na(df$Orig.Infraspecies), 1, NA))))
 
-  # Reordenar las columnas
   column_order <- c("sorter", "Orig.Name", "Orig.Genus", "Orig.Species", "Author",
                     "Orig.Infraspecies", "Infra.Rank",
                     "Orig.Infraspecies_2", "Infra.Rank_2", "Rank")
@@ -242,6 +235,56 @@
 
   return(df)
 }
+
+# .transform_split_classify <- function(df) {
+#   # Convertir a data frame
+#   df <- as.data.frame(df)
+#   df$sorter <- 1:nrow(df)
+#
+#   # Vector de columnas infraespecíficas en orden de prioridad
+#   infra_cols <- c("Subspecies", "Variety", "Subvariety", "Forma", "Subforma")
+#   infra_ranks <- c("SUBSP.", "VAR.", "SUBVAR.", "F.", "SUBF.")
+#
+#   # Inicializar columnas para dos niveles
+#   df$Orig.Infraspecies <- NA_character_
+#   df$Infra.Rank <- NA_character_
+#   df$Orig.Infraspecies_2 <- NA_character_
+#   df$Infra.Rank_2 <- NA_character_
+#
+#   # Iterar por cada fila
+#   for (i in 1:nrow(df)) {
+#     # Encontrar categorías infraespecíficas no vacías
+#     non_empty <- which(df[i, infra_cols] != "")
+#
+#     # Asignar primer nivel (si existe)
+#     if (length(non_empty) >= 1) {
+#       first_idx <- non_empty[1]
+#       df$Orig.Infraspecies[i] <- df[i, infra_cols[first_idx]]
+#       df$Infra.Rank[i] <- infra_ranks[first_idx]
+#     }
+#
+#     # Asignar segundo nivel (si existe)
+#     if (length(non_empty) >= 2) {
+#       second_idx <- non_empty[2]
+#       df$Orig.Infraspecies_2[i] <- df[i, infra_cols[second_idx]]
+#       df$Infra.Rank_2[i] <- infra_ranks[second_idx]
+#     }
+#   }
+#
+#   # Añadir la columna Rank
+#   df$Rank <- ifelse(!is.na(df$Orig.Genus) & !is.na(df$Orig.Species) & is.na(df$Orig.Infraspecies), 2,
+#                     ifelse(!is.na(df$Orig.Genus) & !is.na(df$Orig.Species) & !is.na(df$Orig.Infraspecies) & is.na(df$Orig.Infraspecies_2), 3,
+#                            ifelse(!is.na(df$Orig.Genus) & !is.na(df$Orig.Species) & !is.na(df$Orig.Infraspecies) & !is.na(df$Orig.Infraspecies_2), 4,
+#                                   ifelse(is.na(df$Orig.Species) & is.na(df$Orig.Infraspecies), 1, NA))))
+#
+#   # Reordenar las columnas
+#   column_order <- c("sorter", "Orig.Name", "Orig.Genus", "Orig.Species", "Author",
+#                     "Orig.Infraspecies", "Infra.Rank",
+#                     "Orig.Infraspecies_2", "Infra.Rank_2", "Rank")
+#   df <- df[, column_order]
+#
+#   return(df)
+# }
 
 
 # ---------------------------------------------------------------
@@ -367,4 +410,8 @@ utils::globalVariables(c("%>%", "Genus", "Genus.x", "Matched.Genus",
     "Input.Name", "Is.Synonym", "Match.Scenario", "Nomenclature.Status",
     "Original.Matched", "Original.Status", "Protected.DS043", "Updated.Matched",
     "Updated.Status", "accepted_name", "matched", "protected_ds_043",
-    "taxonomic_status"))
+    "taxonomic_status",
+    "Accepted_name_author", "Author", "Infra.Rank", "Infra.Rank_2",
+    "Matched.Infraspecies_2", "Orig.Infraspecies_2", "accepted_name_author",
+    "fuzzy_infraspecies_2_dist", "fuzzy_match_infraspecies_2", "infraspecies_2",
+    "val_rank_declred"))

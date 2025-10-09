@@ -4,7 +4,7 @@
 \alias{direct_match}
 \title{Direct Match}
 \usage{
-direct_match(df, target_df = NULL)
+direct_match(df, target_df = NULL, use_infraspecies_2 = TRUE)
 }
 \arguments{
 \item{df}{A tibble containing the species data to be matched.}

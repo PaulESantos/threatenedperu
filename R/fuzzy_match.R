@@ -117,14 +117,14 @@ fuzzy_match_species_within_genus_helper <- function(df, target_df){
     dplyr::distinct(Matched.Genus) |>
     unlist()
 
-  database_subset <- memoised_get_threatened_genus(genus, target_df1)
+  database_subset <- memoised_get_threatened_genus(genus, target_df)
 
   # fuzzy match
   matched <-
     df |>
     fuzzyjoin::stringdist_left_join(database_subset,
                                     by = c('Orig.Species' = 'species'),
-                                    distance_col = 'fuzzy_species_dist')
+                                    distance_col = 'fuzzy_species_dist') |>
     dplyr::mutate(Matched.Species = species) |>
     dplyr::select(-c('species', 'genus')) |>
     dplyr::group_by(Orig.Genus, Orig.Species) |>

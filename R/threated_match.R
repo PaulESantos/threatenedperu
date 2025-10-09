@@ -94,11 +94,13 @@ matching_threatenedperu <- function(splist, target_df = "original"){
   # ========================================================================
   # SECTION 1: Target Database Selection and Validation
   # ========================================================================
-
   # Validate target_df parameter
   if (!is.character(target_df) || length(target_df) != 1) {
     stop("target_df must be a single character string: 'original' or 'updated'")
   }
+
+  # Determine if infraspecies_2 is supported
+  use_infraspecies_2 <- (target_df == "original")
 
   # Select appropriate database
   target_prepared <- switch(
@@ -119,13 +121,10 @@ matching_threatenedperu <- function(splist, target_df = "original"){
   )
 
   # Validate database structure
-  # Validate database structure
-  if(target_df == "original"){
-    required_cols <- c("genus", "species",
-                       "infraspecies", "infraspecies_2", "threat_category")
-  }else{
-    required_cols <- c("genus", "species",
-                       "infraspecies", "threat_category")
+  if(use_infraspecies_2){
+    required_cols <- c("genus", "species", "infraspecies", "infraspecies_2", "threat_category")
+  } else {
+    required_cols <- c("genus", "species", "infraspecies", "threat_category")
   }
 
   missing_cols <- setdiff(required_cols, names(target_prepared))
@@ -133,7 +132,6 @@ matching_threatenedperu <- function(splist, target_df = "original"){
     stop("Target database missing required columns: ",
          paste(missing_cols, collapse = ", "))
   }
-
 
   # ========================================================================
   # SECTION 2: Input Processing and Classification
@@ -144,25 +142,34 @@ matching_threatenedperu <- function(splist, target_df = "original"){
     .transform_split_classify()
 
   # Check for and handle non-binomial names
-  .check_binomial(splist_class, splist = splist)
+  non_binomial <- .check_binomial(splist_class, splist = splist)
+  if(length(non_binomial) != 0){
+    df <- splist_class[-non_binomial,]
+  } else{
+    df <- splist_class
+  }
 
-  #if(length(non_binomial) != 0){
-  #  df <- splist_class[-non_binomial,]
-  #  # df$sorter <- 1:nrow(df)
-  #} else{
-  #  df <- splist_class
-  #}
-  df <- splist_class
-  # Initialize matching columns
-  if(!all(c('Matched.Genus', 'Matched.Species', 'Matched.Infraspecies') %in%
-          colnames(df))){
-    df <- df |>
-      tibble::add_column(
-        Matched.Genus = as.character(NA),
-        Matched.Species = as.character(NA),
-        Matched.Infraspecies = as.character(NA),
-        Matched.Infraspecies_2 = as.character(NA)
-      )
+  # Initialize matching columns - SIEMPRE inicializar para compatibilidad
+  matching_cols_to_add <- c('Matched.Genus', 'Matched.Species', 'Matched.Infraspecies')
+
+  if(use_infraspecies_2) {
+    matching_cols_to_add <- c(matching_cols_to_add, 'Matched.Infraspecies_2')
+  }
+
+  cols_missing <- setdiff(matching_cols_to_add, colnames(df))
+
+  if(length(cols_missing) > 0) {
+    for(col in cols_missing) {
+      df[[col]] <- as.character(NA)
+    }
+  }
+
+  # Si NO usamos infraspecies_2 pero la columna existe en df, mantenerla como NA
+  if(!use_infraspecies_2 && 'Orig.Infraspecies_2' %in% colnames(df)) {
+    df$Orig.Infraspecies_2 <- NA_character_
+    if(!'Matched.Infraspecies_2' %in% colnames(df)) {
+      df$Matched.Infraspecies_2 <- NA_character_
+    }
   }
 
   # ========================================================================
@@ -173,7 +180,8 @@ matching_threatenedperu <- function(splist, target_df = "original"){
   # Node 1: Direct Match (Exact match for full name)
   # ---------------------------------------------------------------
   Node_1_processed <- df |>
-    direct_match(target_df = target_prepared)
+    direct_match(target_df = target_prepared,
+                 use_infraspecies_2 = use_infraspecies_2)
 
   Node_1_TRUE <- Node_1_processed |>
     dplyr::filter(direct_match == TRUE)
@@ -190,8 +198,7 @@ matching_threatenedperu <- function(splist, target_df = "original"){
   Node_2_processed <- Node_1_FALSE |>
     genus_match(target_prepared)
 
-  Node_2_TRUE <-
-    Node_2_processed |>
+  Node_2_TRUE <- Node_2_processed |>
     dplyr::filter(genus_match == TRUE)
 
   Node_2_FALSE <- Node_2_processed |>
@@ -218,9 +225,6 @@ matching_threatenedperu <- function(splist, target_df = "original"){
   # ---------------------------------------------------------------
   # Node 4: Direct Match Species within Genus
   # ---------------------------------------------------------------
-  #Node_2_TRUE_input_4 <- Node_2_TRUE |>
-  #  dplyr::filter(!is.na(Orig.Species))
-
   Node_4_input <- Node_3_TRUE |>
     dplyr::bind_rows(Node_2_TRUE)
 
@@ -235,6 +239,7 @@ matching_threatenedperu <- function(splist, target_df = "original"){
 
   assertthat::assert_that(nrow(Node_4_processed) == (nrow(Node_4_TRUE) + nrow(Node_4_FALSE)),
                           msg = "Row count mismatch after Node 4: Species Match")
+
   # ---------------------------------------------------------------
   # Node 5a: Suffix Match Species within Genus
   # ---------------------------------------------------------------
@@ -249,6 +254,7 @@ matching_threatenedperu <- function(splist, target_df = "original"){
 
   assertthat::assert_that(nrow(Node_4_FALSE) == (nrow(Node_5a_TRUE) + nrow(Node_5a_FALSE)),
                           msg = "Row count mismatch after Node 5a: Suffix Match")
+
   # ---------------------------------------------------------------
   # Node 5b: Fuzzy Match Species within Genus
   # ---------------------------------------------------------------
@@ -272,34 +278,39 @@ matching_threatenedperu <- function(splist, target_df = "original"){
   # ========================================================================
 
   # Combine matched and unmatched results
-  combined <- dplyr::bind_rows(Node_1_TRUE,
-                               Node_2_TRUE |>
-                                 dplyr::filter(
-                                   !is.na(Matched.Genus) & Rank == 1
-                                 ),
-                               Node_4_TRUE,
-                               Node_5a_TRUE,
-                               Node_5b_TRUE) |>
-    dplyr::mutate( val_rank_declred = dplyr::case_when(
-      # Nivel genero
-      !is.na(Matched.Genus) & Rank == 1 ~ TRUE,
-      # Nivel especie
-      !is.na(Matched.Genus) & !is.na(Matched.Species) & Rank == 2 ~ TRUE,
-      # Nivel infraspecie 1
-      !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) & Rank == 3 ~ TRUE,
-      # Nivel infraspecie 2
-      !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) & !is.na(Matched.Infraspecies_2) & Rank == 4 ~ TRUE,
-      # Todo lo demás queda fuera
-      TRUE ~ FALSE
-    )
-    )
+  if(use_infraspecies_2) {
+    combined <- dplyr::bind_rows(Node_1_TRUE,
+                                 Node_2_TRUE |>
+                                   dplyr::filter(!is.na(Matched.Genus) & Rank == 1),
+                                 Node_4_TRUE,
+                                 Node_5a_TRUE,
+                                 Node_5b_TRUE) |>
+      dplyr::mutate(val_rank_declred = dplyr::case_when(
+        !is.na(Matched.Genus) & Rank == 1 ~ TRUE,
+        !is.na(Matched.Genus) & !is.na(Matched.Species) & Rank == 2 ~ TRUE,
+        !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) & Rank == 3 ~ TRUE,
+        !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) & !is.na(Matched.Infraspecies_2) & Rank == 4 ~ TRUE,
+        TRUE ~ FALSE
+      ))
+  } else {
+    # Sin infraspecies_2, Rank 4 no es válido
+    combined <- dplyr::bind_rows(Node_1_TRUE,
+                                 Node_2_TRUE |>
+                                   dplyr::filter(!is.na(Matched.Genus) & Rank == 1),
+                                 Node_4_TRUE,
+                                 Node_5a_TRUE,
+                                 Node_5b_TRUE) |>
+      dplyr::mutate(val_rank_declred = dplyr::case_when(
+        !is.na(Matched.Genus) & Rank == 1 ~ TRUE,
+        !is.na(Matched.Genus) & !is.na(Matched.Species) & Rank == 2 ~ TRUE,
+        !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) & Rank == 3 ~ TRUE,
+        TRUE ~ FALSE
+      ))
+  }
 
-  #Evaluar si el match obtenido corresponde con el la estructura (rank) declarado
   matched <- combined |>
     dplyr::filter(val_rank_declred == TRUE)
 
-  # Subset de los elementos en los cuales el rango declarado no concuerda con
-  # los niveles de coincidencia
   unmatched_nd <- combined |>
     dplyr::filter(val_rank_declred == FALSE)
 
@@ -309,93 +320,114 @@ matching_threatenedperu <- function(splist, target_df = "original"){
 
   # ---------------------------------------------------------------
   # NODE 6: Infraspecies Fuzzy Matching
-  # ---------------------------------------------------------------
-  Node_6_input <-
-    unmatched |>
+  Node_6_input <- unmatched |>
     dplyr::filter(!is.na(Orig.Infraspecies),
                   is.na(Matched.Infraspecies))
-
-  Node_6_processed <-
-    Node_6_input |>
+  Node_6_processed <- Node_6_input |>
     fuzzy_match_infraspecies_within_species(target_prepared) |>
-    as.data.frame() |>
-    dplyr::mutate( val_rank_declred = dplyr::case_when(
-      # Nivel infraspecie 1
-      !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) & Rank == 3 ~ TRUE,
-      # Nivel infraspecie 2
-      !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) & !is.na(Matched.Infraspecies_2) & Rank == 4 ~ TRUE,
-      # Todo lo demás queda fuera
-      TRUE ~ FALSE
-    )
-    )
+    as.data.frame()
+
+
+  if(use_infraspecies_2) {
+    Node_6_processed <- Node_6_processed |>
+      dplyr::mutate(val_rank_declred = dplyr::case_when(
+        !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) & Rank == 3 ~ TRUE,
+        !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) & !is.na(Matched.Infraspecies_2) & Rank == 4 ~ TRUE,
+        TRUE ~ FALSE
+      ))
+  } else {
+    Node_6_processed <- Node_6_processed |>
+      dplyr::mutate(val_rank_declred = dplyr::case_when(
+        !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) & Rank == 3 ~ TRUE,
+        TRUE ~ FALSE
+      ))
+  }
 
   Node_6_TRUE <- Node_6_processed |>
-    dplyr::filter(val_rank_declred  == TRUE & fuzzy_match_infraspecies_within_species == TRUE)
+    dplyr::filter(val_rank_declred == TRUE & fuzzy_match_infraspecies_within_species == TRUE)
   Node_6_FALSE <- Node_6_processed |>
-    dplyr::filter(val_rank_declred  == FALSE & fuzzy_match_infraspecies_within_species == TRUE)
+    dplyr::filter(val_rank_declred == FALSE & fuzzy_match_infraspecies_within_species == TRUE)
 
   # ---------------------------------------------------------------
-  # NODE 7: Infraspecies 2 Fuzzy Matching
+  # NODE 7: Infraspecies 2 Fuzzy Matching (solo si use_infraspecies_2 = TRUE)
   # ---------------------------------------------------------------
-  Node_7_processed <-
-    Node_6_FALSE |>
-    fuzzy_match_infraspecies2_within_infraspecies(target_prepared) |>
-    as.data.frame() |>
-    dplyr::mutate( val_rank_declred = dplyr::case_when(
-      # Nivel infraspecie 2
-      !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) & !is.na(Matched.Infraspecies_2) & Rank == 4 ~ TRUE,
-      # Todo lo demás queda fuera
-      TRUE ~ FALSE
-    )
-    )
+  if(use_infraspecies_2) {
+    Node_7_processed <- Node_6_FALSE |>
+      fuzzy_match_infraspecies2_within_infraspecies(target_prepared) |>
+      as.data.frame() |>
+      dplyr::mutate(val_rank_declred = dplyr::case_when(
+        !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) & !is.na(Matched.Infraspecies_2) & Rank == 4 ~ TRUE,
+        TRUE ~ FALSE
+      ))
 
-  Node_7_TRUE <- Node_7_processed |>
-    dplyr::filter(val_rank_declred  == TRUE & fuzzy_match_infraspecies_2 == TRUE)
-  Node_7_FALSE <- Node_7_processed |>
-    dplyr::filter(val_rank_declred  == FALSE & fuzzy_match_infraspecies_2 == TRUE)
+    Node_7_TRUE <- Node_7_processed |>
+      dplyr::filter(val_rank_declred == TRUE & fuzzy_match_infraspecies_2 == TRUE)
+    Node_7_FALSE <- Node_7_processed |>
+      dplyr::filter(val_rank_declred == FALSE & fuzzy_match_infraspecies_2 == TRUE)
 
-  # ---------------------------------------------------------------
-  # Handle Genus-level Names and NA values
-  # ---------------------------------------------------------------
-  # if(length(non_binomial) != 0){
-  #   genus_level <- matrix(nrow = length(non_binomial),
-  #                         ncol = length(names(res)))
-  #   colnames(genus_level) <- names(res)
-  #   genus_level <- as.data.frame(genus_level)
-  #   genus_level$sorter <- splist_class[splist_class$Rank == 1, "sorter"]
-  #   genus_level$Orig.Name <- splist_class[splist_class$Rank == 1, "Orig.Name"]
-  #   genus_level$Orig.Genus <- splist_class[splist_class$Rank == 1, "Orig.Genus"]
-  #   genus_level$Rank <- splist_class[splist_class$Rank == 1, "Rank"]
-  # }
-
-  # ========================================================================
-  # SECTION 5: Consolidate All Results
-  # ========================================================================
-  matched_f <- dplyr::bind_rows(matched,
-                                Node_6_TRUE,
-                                Node_7_TRUE)
-
-  res <- dplyr::bind_rows(matched_f,
-                          Node_7_FALSE,
-                          .id='matched') |>
-    dplyr::mutate(matched = (matched == 1))
+    matched_f <- dplyr::bind_rows(matched, Node_6_TRUE, Node_7_TRUE)
+    res <- dplyr::bind_rows(matched_f, Node_7_FALSE, .id = 'matched') |>
+      dplyr::mutate(matched = (matched == 1))
+  } else {
+    # Sin infraspecies_2, no hay Node 7
+    matched_f <- dplyr::bind_rows(matched, Node_6_TRUE)
+    res <- dplyr::bind_rows(matched_f, Node_6_FALSE, .id = 'matched') |>
+      dplyr::mutate(matched = (matched == 1))
+  }
 
   # ========================================================================
   # SECTION 6: Add Threat Information and Format Output
   # ========================================================================
-  if(target_df == "original"){
+
+  # CRÍTICO: Asegurar que todos los registros de entrada estén en el resultado
+  # Crear un data frame base con todos los sorters originales
+  base_df <- splist_class |>
+    dplyr::select(sorter, Orig.Name, Orig.Genus, Orig.Species,
+                  Orig.Infraspecies, Orig.Infraspecies_2,
+                  Rank, Infra.Rank, Infra.Rank_2, Author)
+
+  # Hacer left_join excluyendo TODAS las columnas que ya existen en base_df
+  # para evitar duplicados (.x y .y)
+  cols_to_exclude <- c("Orig.Name", "Orig.Genus", "Orig.Species",
+                       "Orig.Infraspecies", "Orig.Infraspecies_2",
+                       "Rank", "Infra.Rank", "Infra.Rank_2", "Author")
+
+  res_complete <- base_df |>
+    dplyr::left_join(
+      res |>
+        dplyr::select(-dplyr::any_of(cols_to_exclude)),
+      by = "sorter"
+    )
+
+  # Si hay registros que no están en res, inicializar sus columnas de matching
+  if(use_infraspecies_2) {
+    res_complete <- res_complete |>
+      dplyr::mutate(
+        matched = tidyr::replace_na(matched, FALSE),
+        Matched.Genus = dplyr::if_else(is.na(Matched.Genus), NA_character_, Matched.Genus),
+        Matched.Species = dplyr::if_else(is.na(Matched.Species), NA_character_, Matched.Species),
+        Matched.Infraspecies = dplyr::if_else(is.na(Matched.Infraspecies), NA_character_, Matched.Infraspecies),
+        Matched.Infraspecies_2 = dplyr::if_else(is.na(Matched.Infraspecies_2), NA_character_, Matched.Infraspecies_2)
+      )
+  } else {
+    res_complete <- res_complete |>
+      dplyr::mutate(
+        matched = tidyr::replace_na(matched, FALSE),
+        Matched.Genus = dplyr::if_else(is.na(Matched.Genus), NA_character_, Matched.Genus),
+        Matched.Species = dplyr::if_else(is.na(Matched.Species), NA_character_, Matched.Species),
+        Matched.Infraspecies = dplyr::if_else(is.na(Matched.Infraspecies), NA_character_, Matched.Infraspecies)
+      )
+  }
+
+  # Ahora hacer el join con la información de amenaza
+  if(use_infraspecies_2) {
     target_threat <- target_prepared |>
-      dplyr::select(genus, species,
-                    infraspecies, infraspecies_2,
-                    threat_category,
-                    Accepted_name_author = accepted_name_author) |>
-      dplyr::distinct(genus, species,
-                      infraspecies, infraspecies_2,
-                      .keep_all = TRUE)
-    # Join trhreat category
-    output <- res |>
+      dplyr::select(genus, species, infraspecies, infraspecies_2,
+                    threat_category, Accepted_name_author = accepted_name_author) |>
+      dplyr::distinct(genus, species, infraspecies, infraspecies_2, .keep_all = TRUE)
+
+    output <- res_complete |>
       dplyr::arrange(sorter) |>
-      # Join with threat category information
       dplyr::left_join(
         target_threat,
         by = c("Matched.Genus" = "genus",
@@ -403,19 +435,14 @@ matching_threatenedperu <- function(splist, target_df = "original"){
                "Matched.Infraspecies" = "infraspecies",
                "Matched.Infraspecies_2" = "infraspecies_2")
       )
-
-  }
-  else if(target_df == "updated"){
+  } else {
     target_threat <- target_prepared |>
-      dplyr::select(genus, species,
-                    infraspecies,
-                    threat_category,
-                    Accepted_name_author = accepted_name_author) |>
+      dplyr::select(genus, species, infraspecies,
+                    threat_category, Accepted_name_author = accepted_name_author) |>
       dplyr::distinct(genus, species, infraspecies, .keep_all = TRUE)
-    # Join trhreat category
-    output <- res |>
+
+    output <- res_complete |>
       dplyr::arrange(sorter) |>
-      # Join with threat category information
       dplyr::left_join(
         target_threat,
         by = c("Matched.Genus" = "genus",
@@ -424,123 +451,107 @@ matching_threatenedperu <- function(splist, target_df = "original"){
       )
   }
 
-  output_f <-
-    output |>
-    # Create properly formatted matched name
-    dplyr::mutate(Matched.Name = dplyr::case_when(
-      # Nombre a nivel de genero
-      is.na(Matched.Species) & Rank == 1 ~ stringr::str_to_sentence(Matched.Genus),
-      # Nombre a nivel de especie - binomial
-      is.na(Matched.Infraspecies) & Rank == 2 ~ paste(
-        stringr::str_to_sentence(Matched.Genus),
-        stringr::str_to_lower(Matched.Species),
-        sep = " "
-      ),
-      #Nombre al primer nivel de infraespecie
-      !is.na(Matched.Infraspecies) & Rank == 3 ~ paste(
-        stringr::str_to_sentence(Matched.Genus),
-        stringr::str_to_lower(Matched.Species),
-        stringr::str_to_lower(Infra.Rank),
-        stringr::str_to_lower(Matched.Infraspecies),
-        sep = " "
-      ),
-      #Nombre al segundo nivel de infraespecie
-      !is.na(Matched.Infraspecies_2) & Rank == 4 ~ paste(
-        stringr::str_to_sentence(Matched.Genus),
-        stringr::str_to_lower(Matched.Species),
-        stringr::str_to_lower(Infra.Rank),
-        stringr::str_to_lower(Matched.Infraspecies),
-        stringr::str_to_lower(Infra.Rank_2),
-        stringr::str_to_lower(Matched.Infraspecies_2),
-        sep = " "
-      ),
-      TRUE ~ "---"
-    )) |>
-    # Standardize original name format
-    dplyr::mutate(Orig.Name = str_to_simple_cap(Orig.Name)) |>
+  # Create properly formatted matched name
+  if(use_infraspecies_2) {
+    output_f <- output |>
+      dplyr::mutate(Matched.Name = dplyr::case_when(
+        is.na(Matched.Species) & Rank == 1 ~ stringr::str_to_sentence(Matched.Genus),
+        is.na(Matched.Infraspecies) & Rank == 2 ~ paste(
+          stringr::str_to_sentence(Matched.Genus),
+          stringr::str_to_lower(Matched.Species), sep = " "
+        ),
+        !is.na(Matched.Infraspecies) & is.na(Matched.Infraspecies_2) & Rank == 3 ~ paste(
+          stringr::str_to_sentence(Matched.Genus),
+          stringr::str_to_lower(Matched.Species),
+          stringr::str_to_lower(Infra.Rank),
+          stringr::str_to_lower(Matched.Infraspecies), sep = " "
+        ),
+        !is.na(Matched.Infraspecies_2) & Rank == 4 ~ paste(
+          stringr::str_to_sentence(Matched.Genus),
+          stringr::str_to_lower(Matched.Species),
+          stringr::str_to_lower(Infra.Rank),
+          stringr::str_to_lower(Matched.Infraspecies),
+          stringr::str_to_lower(Infra.Rank_2),
+          stringr::str_to_lower(Matched.Infraspecies_2), sep = " "
+        ),
+        TRUE ~ "---"
+      ))
+  } else {
+    output_f <- output |>
+      dplyr::mutate(Matched.Name = dplyr::case_when(
+        is.na(Matched.Species) & Rank == 1 ~ stringr::str_to_sentence(Matched.Genus),
+        is.na(Matched.Infraspecies) & Rank == 2 ~ paste(
+          stringr::str_to_sentence(Matched.Genus),
+          stringr::str_to_lower(Matched.Species), sep = " "
+        ),
+        !is.na(Matched.Infraspecies) & Rank == 3 ~ paste(
+          stringr::str_to_sentence(Matched.Genus),
+          stringr::str_to_lower(Matched.Species),
+          stringr::str_to_lower(Infra.Rank),
+          stringr::str_to_lower(Matched.Infraspecies), sep = " "
+        ),
+        TRUE ~ "---"
+      ))
+  }
 
-    # Determine matched rank
-    dplyr::mutate(Matched.Rank = dplyr::case_when(
-      !is.na(Matched.Genus) & !is.na(Matched.Species) & is.na(Matched.Infraspecies) & is.na(Matched.Infraspecies_2) ~ 2,
-      !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) & is.na(Matched.Infraspecies_2) ~ 3,
-      is.na(Matched.Species) & is.na(Matched.Infraspecies) & is.na(Matched.Infraspecies_2) ~ 1,
-      !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) & !is.na(Matched.Infraspecies_2) ~ 4,
-      TRUE ~ NA_real_
-    )) |>
-    # Compare taxonomic ranks
+  # Continue with rest of formatting
+  output_f <- output_f |>
+    dplyr::mutate(Orig.Name = str_to_simple_cap(Orig.Name))
+
+  if(use_infraspecies_2) {
+    output_f <- output_f |>
+      dplyr::mutate(Matched.Rank = dplyr::case_when(
+        !is.na(Matched.Genus) & !is.na(Matched.Species) & is.na(Matched.Infraspecies) & is.na(Matched.Infraspecies_2) ~ 2,
+        !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) & is.na(Matched.Infraspecies_2) ~ 3,
+        !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) & !is.na(Matched.Infraspecies_2) ~ 4,
+        is.na(Matched.Species) & is.na(Matched.Infraspecies) & is.na(Matched.Infraspecies_2) ~ 1,
+        TRUE ~ NA_real_
+      ))
+  } else {
+    output_f <- output_f |>
+      dplyr::mutate(Matched.Rank = dplyr::case_when(
+        !is.na(Matched.Genus) & !is.na(Matched.Species) & is.na(Matched.Infraspecies) ~ 2,
+        !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) ~ 3,
+        is.na(Matched.Species) & is.na(Matched.Infraspecies) ~ 1,
+        TRUE ~ NA_real_
+      ))
+  }
+
+  output_f <- output_f |>
     dplyr::mutate(Comp.Rank = (Rank == Matched.Rank)) |>
-
-    # Assign threat status
     dplyr::mutate(Threat.Status = dplyr::case_when(
-      is.na(Matched.Genus) & is.na(Matched.Species) & is.na(Matched.Infraspecies) & is.na(Matched.Infraspecies_2) ~
-        'Not threatened',
-      #is.na(Matched.Genus) & is.na(Matched.Species) & !is.na(Matched.Infraspecies) & is.na(Matched.Infraspecies_2) ~
-      #  'Not threatened',
+      is.na(Matched.Genus) & is.na(Matched.Species) & is.na(Matched.Infraspecies) ~ "Not threatened",
       !is.na(threat_category) ~ threat_category,
-      # Comp.Rank == TRUE & matched == TRUE ~ 'Threatened - Unknown category',
-      TRUE ~ 'Not threatened'
+      TRUE ~ "Not threatened"
     )) |>
-
-    # Fix display of unmatched names
-    dplyr::mutate(Matched.Name = dplyr::if_else(
-      is.na(Matched.Name), "---", Matched.Name
-    )) |>
-    # Fix display of undetermined author names
-    dplyr::mutate(Accepted_name_author = dplyr::if_else(
-      is.na(Accepted_name_author), "---", Accepted_name_author
-    )) |>
-
-    # Reorder columns for clarity
-    dplyr::relocate(c(
-      "sorter", "Orig.Name", "Matched.Name", "Threat.Status","Author",
-      "Accepted_name_author"))
-  # , "threat_category",
-  #    "Orig.Genus", "Orig.Species", "Orig.Infraspecies", "Orig.Infraspecies_2",
-  #    "Rank", "Infra.Rank", "Infra.Rank_2", "Comp.Rank",
-  #    "Matched.Genus", "Matched.Species", "Matched.Infraspecies",
-  #    "Matched.Infraspecies_2", "Matched.Rank",
-  #    "matched", "direct_match", "genus_match", "fuzzy_match_genus",
-  #    "direct_match_species_within_genus", "suffix_match_species_within_genus",
-  #    "fuzzy_match_species_within_genus", "fuzzy_genus_dist",
-  #    "fuzzy_species_dist", "fuzzy_match_infraspecies_within_species",
-  #    "fuzzy_infraspecies_dist", "fuzzy_match_infraspecies_2",
-  #    "fuzzy_infraspecies_2_dist"
-  #  ))
+    dplyr::mutate(Matched.Name = dplyr::if_else(is.na(Matched.Name), "---", Matched.Name)) |>
+    dplyr::mutate(Accepted_name_author = dplyr::if_else(is.na(Accepted_name_author), "---", Accepted_name_author)) |>
+    dplyr::relocate(c("sorter", "Orig.Name", "Matched.Name", "Threat.Status",
+                      "Author", "Accepted_name_author"))
 
   # ========================================================================
   # SECTION 7: Data Cleaning and Final Validation
   # ========================================================================
 
-  # Remove specific duplicate matches and edge cases
-  # if(target_df == "original"){
-  #   output <- output |>
-  #     #dplyr::filter(
-  #     # !(stringr::str_detect(Matched.Name,
-  #     #                      "Haageocereus acranthus subsp. olowinskianus") &
-  #     #   threat_category != "VU")
-  #     # ) |>
-  #     dplyr::group_by(Matched.Name) |>
-  #     dplyr::distinct() |>
-  #     dplyr::ungroup()
-  # } else if(target_df == "updated"){
-  #   output <- output |>
-  #     dplyr::filter(
-  #       !(stringr::str_detect(Matched.Name,
-  #                             "Haageocereus acranthus subsp. acranthus") &
-  #           threat_category != "VU")
-  #     ) |>
-  #     dplyr::group_by(Matched.Name) |>
-  #     dplyr::distinct() |>
-  #     dplyr::ungroup()
-  # }
-
-
-  # Final validation
+  # Final validation: TODOS los registros de entrada deben estar presentes
   assertthat::assert_that(
     nrow(splist_class) == nrow(output_f),
-    msg = "Final output row count does not match input"
+    msg = paste0("Final output row count (", nrow(output_f),
+                 ") does not match input (", nrow(splist_class), ")")
+  )
+
+  # Verificar que todos los sorters originales estén presentes
+  assertthat::assert_that(
+    all(splist_class$sorter %in% output_f$sorter),
+    msg = "Some input records are missing from output"
+  )
+
+  # Verificar que los sorters estén en el orden correcto
+  assertthat::assert_that(
+    all(output_f$sorter == sort(output_f$sorter)),
+    msg = "Output records are not in correct order"
   )
 
   return(output_f)
-}
 
+}
