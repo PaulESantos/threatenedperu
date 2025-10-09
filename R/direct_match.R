@@ -10,22 +10,32 @@
 #' A tibble with an additional logical column direct_match indicating whether the binomial or trinomial name was successfully matched (`TRUE`) or not (`FALSE`).
 #'
 #' @keywords internal
-direct_match <- function(df, target_df = NULL){
+direct_match <- function(df, target_df = NULL) {
+
   assertthat::assert_that(all(c('Orig.Genus',
                                 'Orig.Species',
-                                'Orig.Infraspecies') %in%
+                                'Orig.Infraspecies',
+                                'Orig.Infraspecies_2') %in%
                                 colnames(df)))
 
-  ## solve issue of empty input tibble, and needed to ensure
-  ## compatilbility with sequential_matching: because there the
-  ## columns already exists for the second backbone
-  if(!all(c('direct_match') %in% colnames(df))){
-    if(nrow(df) == 0){
-      return(tibble::add_column(df, direct_match = NA))
+  if(!all(c('direct_match') %in% colnames(df))) {
+    if(nrow(df) == 0) {
+      return(tibble::add_column(df,
+                                direct_match = NA))
     }
   }
 
-  matched <- df |>
+  # Match completo (género + especie + infrasp1 + infrasp2)
+  matched_bino <- df |>
+    dplyr::filter(Rank == 2) |>
+    dplyr::semi_join(target_df,
+                     by = c('Orig.Genus' = 'genus',
+                            'Orig.Species' = 'species')) |>
+    dplyr::mutate(Matched.Genus = Orig.Genus,
+                  Matched.Species = Orig.Species)
+
+  matched_infra_1 <- df |>
+    dplyr::filter(Rank == 3) |>
     dplyr::semi_join(target_df,
                      by = c('Orig.Genus' = 'genus',
                             'Orig.Species' = 'species',
@@ -33,21 +43,45 @@ direct_match <- function(df, target_df = NULL){
     dplyr::mutate(Matched.Genus = Orig.Genus,
                   Matched.Species = Orig.Species,
                   Matched.Infraspecies = Orig.Infraspecies)
-matched
+  matched_infra_2 <- df |>
+    dplyr::filter(Rank == 4) |>
+    dplyr::semi_join(target_df,
+                     by = c('Orig.Genus' = 'genus',
+                            'Orig.Species' = 'species',
+                            'Orig.Infraspecies' = 'infraspecies',
+                            'Orig.Infraspecies_2' = 'infraspecies_2')) |>
+    dplyr::mutate(Matched.Genus = Orig.Genus,
+                  Matched.Species = Orig.Species,
+                  Matched.Infraspecies = Orig.Infraspecies,
+                  Matched.Infraspecies_2 = Orig.Infraspecies_2)
+
+  matched <- dplyr::bind_rows(matched_bino, matched_infra_1, matched_infra_2) |>
+    dplyr::filter(
+      dplyr::case_when(
+        # Nivel especie
+        !is.na(Matched.Genus) & !is.na(Matched.Species) & Rank == 2 ~ TRUE,
+        # Nivel infraspecie 1
+        !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) & Rank == 3 ~ TRUE,
+        # Nivel infraspecie 2
+        !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) & !is.na(Matched.Infraspecies_2) & Rank == 4 ~ TRUE,
+        # Todo lo demás queda fuera
+        TRUE ~ FALSE
+      )
+    )
+
   unmatched <- df |>
-    dplyr::anti_join( target_df,
-                      c('Orig.Genus' = 'genus',
-                        'Orig.Species' = 'species',
-                        'Orig.Infraspecies' = 'infraspecies'))
-unmatched
+    dplyr::anti_join(target_df,
+                     c('Orig.Genus' = 'genus',
+                       'Orig.Species' = 'species',
+                       'Orig.Infraspecies' = 'infraspecies',
+                       'Orig.Infraspecies_2' = 'infraspecies_2'))
+
   assertthat::assert_that(nrow(df) == (nrow(matched) + nrow(unmatched)))
 
-  # combine matched and unmatched and add Boolean indicator: TRUE = matched, FALSE = unmatched
-  combined <-  dplyr::bind_rows(matched, unmatched,
-                                .id = 'direct_match') |>
-    dplyr::mutate(direct_match = (direct_match == 1)) |>  ## convert to Boolean
-    dplyr::relocate(c('Orig.Genus', 'Orig.Species', 'Orig.Infraspecies'))
-  ## Genus & Species column at the beginning of tibble
+  combined <- dplyr::bind_rows(matched, unmatched, .id = 'direct_match') |>
+    dplyr::mutate(direct_match = (direct_match == 1)) |>
+    dplyr::relocate(c('Orig.Genus', 'Orig.Species', 'Orig.Infraspecies',
+                      'Orig.Infraspecies_2'))
 
   return(combined)
 }
@@ -66,7 +100,8 @@ unmatched
 genus_match <- function(df, target_df = NULL){
   assertthat::assert_that(all(c('Orig.Genus',
                                 'Orig.Species',
-                                'Orig.Infraspecies')
+                                'Orig.Infraspecies',
+                                'Orig.Infraspecies_2')
                               %in% colnames(df)))
 
   ## solve issue of empty input tibble and needed to ensure compatilbility with sequential_matching: because there the columns already exists for the second backbone
@@ -78,15 +113,20 @@ genus_match <- function(df, target_df = NULL){
       return(df)
     }
   }
-
-  matched <- df |>
+  matched <-
+   df |>
     dplyr::semi_join( target_df,
                       by = c('Orig.Genus' = 'genus')) |>
-    dplyr::mutate(Matched.Genus = Orig.Genus)
-
-  unmatched <- df |>
-    dplyr::anti_join(target_df,
-                     by = c('Orig.Genus' = 'genus'))
+    dplyr::mutate(Matched.Genus = Orig.Genus) #|>
+    # Revisar la siguiente seccion podria generar un error
+    #dplyr::filter(dplyr::case_when(
+    #!is.na(Matched.Genus) & Rank == 1 ~ TRUE,
+    #TRUE ~ FALSE
+    #))
+  unmatched <-
+   df |>
+    dplyr::anti_join(matched,
+                     by = c('Orig.Genus' = 'Orig.Genus'))
 
   assertthat::assert_that(nrow(df) == (nrow(matched) + nrow(unmatched)))
 
@@ -96,7 +136,8 @@ genus_match <- function(df, target_df = NULL){
     dplyr::mutate(genus_match = (genus_match == 1)) |>  ## convert to Boolean
     dplyr::relocate(c('Orig.Genus',
                       'Orig.Species',
-                      'Orig.Infraspecies'))
+                      'Orig.Infraspecies',
+                      'Orig.Infraspecies_2'))
   ## Genus & Species column at the beginning of tibble
 
   return(combined)
