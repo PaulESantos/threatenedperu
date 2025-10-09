@@ -58,25 +58,45 @@ is_ds043_2006_ag <- function(splist,
   # ========================================================================
 
   if (!is.character(splist)) {
-    stop("splist must be a character vector")
+    stop("splist must be a character vector", call. = FALSE)
   }
 
   if (length(splist) == 0) {
-    warning("Empty species list provided")
+    warning("Empty species list provided", call. = FALSE)
     return(if(return_details) tibble::tibble() else character(0))
   }
 
   if (!prioritize %in% c("original", "updated")) {
-    stop("prioritize must be 'original' or 'updated'")
+    stop("prioritize must be 'original' or 'updated'", call. = FALSE)
   }
 
-  # Check required datasets
-  if (!exists("threatenedperu")) {
-    stop("Dataset 'threatenedperu' not found")
+  # Cargar datasets necesarios del paquete
+  # Método 1: Acceso directo (recomendado si LazyData: true en DESCRIPTION)
+  if (!exists("threatenedperu", mode = "list")) {
+    # Si no está cargado, intentar cargar explícitamente
+    tryCatch({
+      data("threatenedperu", envir = environment(), package = "threatenedperu")
+    }, error = function(e) {
+      stop(
+        "Dataset 'threatenedperu' not found. ",
+        "Please ensure the package is properly installed.\n",
+        "Original error: ", e$message,
+        call. = FALSE
+      )
+    })
   }
 
-  if (!exists("threatenedperu_syn")) {
-    stop("Dataset 'threatenedperu_syn' not found")
+  if (!exists("threatenedperu_syn", mode = "list")) {
+    tryCatch({
+      data("threatenedperu_syn", envir = environment(), package = "threatenedperu")
+    }, error = function(e) {
+      stop(
+        "Dataset 'threatenedperu_syn' not found. ",
+        "Please ensure the package is properly installed.\n",
+        "Original error: ", e$message,
+        call. = FALSE
+      )
+    })
   }
 
 

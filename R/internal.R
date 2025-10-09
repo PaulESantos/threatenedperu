@@ -222,18 +222,77 @@
     }
   }
 
-  # Añadir Rank (siempre calcular Rank 4 en la entrada, luego se filtra si no se usa)
-  df$Rank <- ifelse(!is.na(df$Orig.Genus) & !is.na(df$Orig.Species) & is.na(df$Orig.Infraspecies), 2,
-                    ifelse(!is.na(df$Orig.Genus) & !is.na(df$Orig.Species) & !is.na(df$Orig.Infraspecies) & is.na(df$Orig.Infraspecies_2), 3,
-                           ifelse(!is.na(df$Orig.Genus) & !is.na(df$Orig.Species) & !is.na(df$Orig.Infraspecies) & !is.na(df$Orig.Infraspecies_2), 4,
-                                  ifelse(is.na(df$Orig.Species) & is.na(df$Orig.Infraspecies), 1, NA))))
+  # Calcular Rank de forma clara y explícita
+  # Rank 1: Solo género
+  # Rank 2: Género + especie (binomial)
+  # Rank 3: Género + especie + infraspecies nivel 1 (trinomial)
+  # Rank 4: Género + especie + infraspecies nivel 1 + nivel 2 (cuatrinomial)
 
-  column_order <- c("sorter", "Orig.Name", "Orig.Genus", "Orig.Species", "Author",
-                    "Orig.Infraspecies", "Infra.Rank",
-                    "Orig.Infraspecies_2", "Infra.Rank_2", "Rank")
+  df$Rank <- dplyr::case_when(
+    # Rank 1: Solo género válido, sin especie
+    !is.na(df$Orig.Genus) & is.na(df$Orig.Species) ~ 1L,
+
+    # Rank 2: Género + especie, sin infraspecies
+    !is.na(df$Orig.Genus) & !is.na(df$Orig.Species) &
+      is.na(df$Orig.Infraspecies) ~ 2L,
+
+    # Rank 3: Género + especie + infraspecies nivel 1, sin nivel 2
+    !is.na(df$Orig.Genus) & !is.na(df$Orig.Species) &
+      !is.na(df$Orig.Infraspecies) & is.na(df$Orig.Infraspecies_2) ~ 3L,
+
+    # Rank 4: Género + especie + infraspecies nivel 1 + nivel 2
+    !is.na(df$Orig.Genus) & !is.na(df$Orig.Species) &
+      !is.na(df$Orig.Infraspecies) & !is.na(df$Orig.Infraspecies_2) ~ 4L,
+
+    # Casos inválidos
+    TRUE ~ NA_integer_
+  )
+
+  # Validar que no haya NAs inesperados en Rank
+  if (any(is.na(df$Rank))) {
+    na_ranks <- sum(is.na(df$Rank))
+    warning(
+      na_ranks, " names could not be assigned a taxonomic rank.\n",
+      "This may indicate malformed names in the input.",
+      call. = FALSE,
+      immediate. = TRUE
+    )
+  }
+
+  # Reportar distribución de ranks para debugging (solo si hay muchos nombres)
+  if (nrow(df) > 10) {
+    rank_dist <- table(df$Rank, useNA = "ifany")
+    message(
+      "Rank distribution: ",
+      paste(names(rank_dist), "=", rank_dist, collapse = ", ")
+    )
+  }
+
+  # ========================================================================
+  # Reorder Columns and Return
+  # ========================================================================
+
+  column_order <- c(
+    "sorter", "Orig.Name", "Orig.Genus", "Orig.Species", "Author",
+    "Orig.Infraspecies", "Infra.Rank",
+    "Orig.Infraspecies_2", "Infra.Rank_2",
+    "Rank"
+  )
+
+  # Verificar que todas las columnas existan antes de reordenar
+  missing_order_cols <- setdiff(column_order, colnames(df))
+  if (length(missing_order_cols) > 0) {
+    stop(
+      "Cannot reorder columns. Missing: ",
+      paste(missing_order_cols, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
   df <- df[, column_order]
 
   return(df)
+
 }
 
 # .transform_split_classify <- function(df) {
@@ -391,27 +450,77 @@ str_to_simple_cap <- function(text) {
 }
 
 
+#' Access Internal Package Data
+#'
+#' @keywords internal
+#' @noRd
+get_threatened_data <- function(type = c("original", "updated")) {
+  type <- match.arg(type)
+
+  # Los datos deben estar en R/sysdata.rda
+  data_name <- switch(
+    type,
+    "original" = "threatenedperu",
+    "updated" = "threatenedperu_syn"
+  )
+
+  # Acceder desde el namespace del paquete
+  ns <- asNamespace("threatenedperu")
+
+  if (!exists(data_name, envir = ns, inherits = FALSE)) {
+    stop(
+      "Internal dataset '", data_name, "' not found in package namespace.\n",
+      "This indicates a package installation problem.",
+      call. = FALSE
+    )
+  }
+
+  get(data_name, envir = ns, inherits = FALSE)
+}
+
 # ---------------------------------------------------------------
-utils::globalVariables(c("%>%", "Genus", "Genus.x", "Matched.Genus",
-                         "Matched.Infraspecies", "Matched.Species",
-                         "Orig.Genus", "Orig.Infraspecies", "Orig.Species",
-                         "Sorter", "Species", "fuzzy_genus_dist",
-                         "fuzzy_infraspecies_dist", "fuzzy_species_dist",
-                         "infraspecies", "sorter", "Comp.Rank", "Matched.Rank",
-                         "Orig.Name", "Rank", "Matched.Name", "Threat_Category",
-                         "Threat_Status", "Family", "Infraspecies", "Infra_Rank",
-                         "Tag", "forma", "genero", "specific_epithet", "scientific_name",
-                         "nombre_comun", "author", "infraespecie", "categoria", "familia",
-                         "Category", "Count", "Original.Index", "Threat.Status", "family",
-                         "genus", "semi_join", "species", "threat_Category",
-                         "threat_category", "threatenedperu",
-                         "Accepted.Name", "Consolidated.Category", "Consolidated.Name",
-    "Consolidated.Status", "Final.Source", "Found.In.Original", "Found.In.Updated",
-    "Input.Name", "Is.Synonym", "Match.Scenario", "Nomenclature.Status",
-    "Original.Matched", "Original.Status", "Protected.DS043", "Updated.Matched",
-    "Updated.Status", "accepted_name", "matched", "protected_ds_043",
-    "taxonomic_status",
-    "Accepted_name_author", "Author", "Infra.Rank", "Infra.Rank_2",
-    "Matched.Infraspecies_2", "Orig.Infraspecies_2", "accepted_name_author",
-    "fuzzy_infraspecies_2_dist", "fuzzy_match_infraspecies_2", "infraspecies_2",
-    "val_rank_declred"))
+utils::globalVariables(c(
+  # Columnas de matching
+  "Matched.Genus", "Matched.Species", "Matched.Infraspecies", "Matched.Infraspecies_2",
+  "Orig.Genus", "Orig.Species", "Orig.Infraspecies", "Orig.Infraspecies_2",
+
+  # Columnas de ranks
+  "Rank", "Matched.Rank", "Comp.Rank", "Match.Level",
+  "Infra.Rank", "Infra.Rank_2",
+
+  # Columnas de status
+  "Threat.Status", "threat_category", "taxonomic_status",
+  "Threat_Category", "Threat_Status",
+
+  # Columnas de nombres
+  "Orig.Name", "Matched.Name", "scientific_name", "accepted_name",
+  "accepted_name_author",
+
+  # Columnas de matching methods
+  "direct_match", "genus_match", "fuzzy_match_genus",
+  "direct_match_species_within_genus", "suffix_match_species_within_genus",
+  "fuzzy_match_species_within_genus", "fuzzy_match_infraspecies_within_species",
+  "fuzzy_match_infraspecies_2",
+
+  # Columnas de distancias
+  "fuzzy_genus_dist", "fuzzy_species_dist",
+  "fuzzy_infraspecies_dist", "fuzzy_infraspecies_2_dist",
+
+  # Columnas auxiliares
+  "sorter", "matched", "val_rank_declred", "valid_rank",
+
+  # Columnas de base de datos
+  "genus", "species", "infraspecies", "infraspecies_2",
+  "family", "Family",
+
+  # Otras
+  "Author", "Category", "Count", "Original.Index",
+  "Accepted.Name", "Consolidated.Category", "Consolidated.Name",
+  "Consolidated.Status", "Final.Source", "Found.In.Original", "Found.In.Updated",
+  "Input.Name", "Is.Synonym", "Match.Scenario", "Nomenclature.Status",
+  "Original.Matched", "Original.Status", "Protected.DS043", "Updated.Matched",
+  "Updated.Status", "protected_ds_043", "data",
+
+  # Para operadores pipe
+  "%>%"
+))

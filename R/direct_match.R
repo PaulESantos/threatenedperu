@@ -15,13 +15,44 @@ direct_match <- function(df, target_df = NULL, use_infraspecies_2 = TRUE) {
   assertthat::assert_that(all(c('Orig.Genus', 'Orig.Species',
                                 'Orig.Infraspecies') %in% colnames(df)))
 
-  if(use_infraspecies_2) {
-    assertthat::assert_that('Orig.Infraspecies_2' %in% colnames(df))
+  # ========================================================================
+  # Validate Input Columns
+  # ========================================================================
+
+  # Columnas requeridas básicas (siempre deben existir)
+  required_cols <- c('Orig.Genus', 'Orig.Species', 'Orig.Infraspecies')
+
+  # Si se espera infraspecies_2, validar que exista
+  if (use_infraspecies_2) {
+    required_cols <- c(required_cols, 'Orig.Infraspecies_2')
   }
 
-  if(!all(c('direct_match') %in% colnames(df))) {
-    if(nrow(df) == 0) {
-      return(tibble::add_column(df, direct_match = NA))
+  # Validar que todas las columnas requeridas existan
+  missing_cols <- setdiff(required_cols, colnames(df))
+  if (length(missing_cols) > 0) {
+    stop(
+      "direct_match() requires columns: ", paste(missing_cols, collapse = ", "),
+      "\nProvided dataframe is missing these columns.",
+      "\nThis is likely a bug in the pipeline. Please report this issue.",
+      call. = FALSE
+    )
+  }
+
+  # Manejo especial para dataframe vacío
+  if (nrow(df) == 0) {
+    if (!'direct_match' %in% colnames(df)) {
+      df <- tibble::add_column(df, direct_match = logical(0))
+    }
+    return(df)
+  }
+
+  # Asegurar que las columnas Matched también existan (para binding posterior)
+  matched_cols <- c('Matched.Genus', 'Matched.Species',
+                    'Matched.Infraspecies', 'Matched.Infraspecies_2')
+
+  for (col in matched_cols) {
+    if (!col %in% colnames(df)) {
+      df[[col]] <- NA_character_
     }
   }
 
