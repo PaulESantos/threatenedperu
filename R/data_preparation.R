@@ -115,9 +115,19 @@
 #           species = stringr::word(accepted_name, 2, 2) |> toupper(),
 #           tag_acc = stringr::word(accepted_name, 3, 3),
 #           infraspecies = stringr::word(accepted_name, 4, 4) |> toupper()) |>
-#    dplyr::filter(taxonomic_status == "Synonym")
-##
-##   threatenedperu_syn
+#    dplyr::filter(taxonomic_status == "Synonym") |>
+#    dplyr::mutate(genus = ifelse(stringr::str_detect(accepted_name, "^x "),
+#                                "LYCIDA",
+#                                genus),
+#                 species = ifelse(stringr::str_detect(accepted_name, "^x "),
+#                                  "MATHIASIAE",
+#                                  species
+#                 ),
+#                 tag_acc = ifelse(stringr::str_detect(accepted_name, "^x "),
+#                                  NA_character_,
+#                                  tag_acc
+#                 )
+#    )
 ##
 ##
 ##  # Al final, después de crear ambos datasets
