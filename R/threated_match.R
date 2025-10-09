@@ -137,7 +137,7 @@ matching_threatenedperu <- function(splist, target_df = "original"){
     df$Matched.Infraspecies_2 <- NA_character_
 
     message(
-      "Note: Using database '", target_df, "' which does not support infraspecies_2.\n",
+      "Note: Using database '", target_df, "' which does not support Rank 4 level.\n",
       "Any subspecific rank beyond the first level will be ignored."
     )
   }
