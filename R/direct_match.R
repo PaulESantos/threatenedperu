@@ -119,24 +119,46 @@ direct_match <- function(df, target_df = NULL, use_infraspecies_2 = TRUE) {
   # ==========================================================================
   # SECTION 5: Match Trinomial Names (Rank 3 - Infraspecies Level 1)
   # ==========================================================================
-
-  matched_infra_1 <- df |>
-    dplyr::filter(Rank == 3) |>
-    dplyr::semi_join(
-      target_prepared,
-      by = c(
-        'Orig.Genus' = 'genus',
-        'Orig.Species' = 'species',
-        'Orig.Infra.Rank' = 'tag',
-        'Orig.Infraspecies' = 'infraspecies'
+  if (use_infraspecies_2) {
+    matched_infra_1 <-
+    df |>
+      dplyr::filter(Rank == 3) |>
+      dplyr::semi_join(
+        target_prepared,
+        by = c(
+          'Orig.Genus' = 'genus',
+          'Orig.Species' = 'species',
+          'Orig.Infra.Rank' = 'tag',
+          'Orig.Infraspecies' = 'infraspecies'
+        )
+      ) |>
+      dplyr::mutate(
+        Matched.Genus = Orig.Genus,
+        Matched.Species = Orig.Species,
+        Matched.Infra.Rank = Orig.Infra.Rank,
+        Matched.Infraspecies = Orig.Infraspecies
       )
-    ) |>
-    dplyr::mutate(
-      Matched.Genus = Orig.Genus,
-      Matched.Species = Orig.Species,
-      Matched.Infra.Rank = Orig.Infra.Rank,
-      Matched.Infraspecies = Orig.Infraspecies
-    )
+  } else{
+    matched_infra_1 <-
+    df |>
+      dplyr::filter(Rank == 3) |>
+      dplyr::semi_join(
+        target_prepared,
+        by = c(
+          'Orig.Genus' = 'genus',
+          'Orig.Species' = 'species',
+          'Orig.Infra.Rank' = 'tag_acc',
+          'Orig.Infraspecies' = 'infraspecies'
+        )
+      ) |>
+      dplyr::mutate(
+        Matched.Genus = Orig.Genus,
+        Matched.Species = Orig.Species,
+        Matched.Infra.Rank = Orig.Infra.Rank,
+        Matched.Infraspecies = Orig.Infraspecies
+      )
+  }
+
 
   # ==========================================================================
   # SECTION 6: Match Quaternomial Names (Rank 4 - Infraspecies Level 2)

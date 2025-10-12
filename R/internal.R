@@ -260,13 +260,13 @@
   }
 
   # Reportar distribución de ranks para debugging (solo si hay muchos nombres)
-  if (nrow(df) > 10) {
-    rank_dist <- table(df$Rank, useNA = "ifany")
-    message(
-      "Rank distribution: ",
-      paste(names(rank_dist), "=", rank_dist, collapse = ", ")
-    )
-  }
+  #if (nrow(df) > 10) {
+  #  rank_dist <- table(df$Rank, useNA = "ifany")
+  #  message(
+  #    "Rank distribution: ",
+  #    paste(names(rank_dist), "=", rank_dist, collapse = ", ")
+  #  )
+  #}
 
   # ========================================================================
   # Reorder Columns and Return
