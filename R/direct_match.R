@@ -1,4 +1,3 @@
-
 #' Direct Match Species Names
 #'
 #' @description
@@ -11,6 +10,7 @@
 #'   the reference list of threatened species.
 #' @param use_infraspecies_2 Logical. If TRUE (default), attempts to match quaternomial
 #'   names with infraspecies level 2. If FALSE, only matches up to infraspecies level 1.
+#'   This should match the database capabilities (original = TRUE, updated = FALSE).
 #'
 #' @return
 #' A tibble with an additional logical column `direct_match` indicating whether
@@ -97,7 +97,7 @@ direct_match <- function(df, target_df = NULL, use_infraspecies_2 = TRUE) {
     target_prepared <-
     target_df |>
       dplyr::mutate(
-        tag = toupper(tag_acc)
+        tag_acc = toupper(tag_acc)
       )
   }
 

@@ -473,7 +473,7 @@ utils::globalVariables(c(
 
   "direct_match_infra_rank", "fuzzy_match_infraspecies", "tag", "tag_2",
   "tag_accdirect_match_infra_rank", "fuzzy_match_infraspecies",
-  "tag", "tag_2", "tag_acc",
+  "tag", "tag_2", "tag_acc", "Matched.Rank.Calculated",
   # Para operadores pipe
   "%>%"
 ))

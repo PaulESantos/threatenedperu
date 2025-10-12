@@ -4,3 +4,5 @@
 ^README\.Rmd$
 ^cran-comments\.md$
 papers_modelos
+^threatenedperu_db.txt
+^threatenedperu_db_syn.txt

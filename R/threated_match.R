@@ -103,27 +103,22 @@ matching_threatenedperu <- function(splist, target_df = "original") {
   # ==========================================================================
   # SECTION 2B: Initialize ALL Matching Columns
   # ==========================================================================
-  # CRITICAL: Initialize ALL possible matching columns to prevent errors
-  # throughout the pipeline
-  # ==========================================================================
 
   all_matching_cols <- c(
     'Matched.Genus',
     'Matched.Species',
-    'Matched.Infra.Rank',        # ADDED
+    'Matched.Infra.Rank',
     'Matched.Infraspecies',
-    'Matched.Infra.Rank_2',      # ADDED
+    'Matched.Infra.Rank_2',
     'Matched.Infraspecies_2'
   )
 
-  # Initialize ALL matching columns as NA if they don't exist
   for (col in all_matching_cols) {
     if (!col %in% colnames(df)) {
       df[[col]] <- NA_character_
     }
   }
 
-  # Ensure original infraspecies columns exist
   if (!'Orig.Infraspecies' %in% colnames(df)) {
     df$Orig.Infraspecies <- NA_character_
   }
@@ -132,10 +127,8 @@ matching_threatenedperu <- function(splist, target_df = "original") {
     df$Orig.Infraspecies_2 <- NA_character_
   }
 
-  # Mark if we're using infraspecies_2 in this process
   attr(df, "use_infraspecies_2") <- use_infraspecies_2
 
-  # If NOT using infraspecies_2, ensure those columns remain NA
   if (!use_infraspecies_2) {
     df$Orig.Infraspecies_2 <- NA_character_
     df$Matched.Infraspecies_2 <- NA_character_
@@ -276,7 +269,7 @@ matching_threatenedperu <- function(splist, target_df = "original") {
   )
 
   # ==========================================================================
-  # SECTION 4: Combine Results and Validate Ranks
+  # SECTION 4: Combine Results and Validate Ranks CRITICAL SECTION
   # ==========================================================================
 
   combined <- dplyr::bind_rows(
@@ -287,58 +280,77 @@ matching_threatenedperu <- function(splist, target_df = "original") {
     Node_5b_TRUE
   )
 
-  # -------------------------------------------------------------------------
-  # Validate Matched Rank Against Declared Rank
-  # -------------------------------------------------------------------------
+  # =========================================================================
+  # CRITICAL VALIDATION: Matched Rank vs Declared Rank
+  # =========================================================================
+  # This validation prevents FALSE POSITIVES where:
+  # - User inputs: "Cattleya maxima var. alba" (Rank 3, doesn't exist)
+  # - Database has: "Cattleya maxima" (Rank 2, exists)
+  # - Without validation: Would incorrectly match and return "Threatened"
+  # - With validation: Correctly rejects match, returns "Not threatened"
+  # =========================================================================
+
   combined <- combined |>
     dplyr::mutate(
-      valid_rank = dplyr::case_when(
+      # Calculate the actual matched rank based on populated columns
+      Matched.Rank.Calculated = dplyr::case_when(
         # Rank 1: Only genus matched
         !is.na(Matched.Genus) &
-          is.na(Matched.Species) &
-          Rank == 1 ~ TRUE,
+          is.na(Matched.Species) ~ 1L,
 
-        # Rank 2: Genus + species matched (no infraspecific information)
+        # Rank 2: Genus + species matched (binomial), NO infraspecies
         !is.na(Matched.Genus) &
           !is.na(Matched.Species) &
           is.na(Matched.Infra.Rank) &
-          is.na(Matched.Infraspecies) &
-          Rank == 2 ~ TRUE,
+          is.na(Matched.Infraspecies) ~ 2L,
 
-        # Rank 3: Genus + species + infraspecies level 1 matched
+        # Rank 3: Genus + species + infraspecies level 1 (trinomial)
         !is.na(Matched.Genus) &
           !is.na(Matched.Species) &
           !is.na(Matched.Infra.Rank) &
           !is.na(Matched.Infraspecies) &
           is.na(Matched.Infra.Rank_2) &
-          is.na(Matched.Infraspecies_2) &
-          Rank == 3 ~ TRUE,
+          is.na(Matched.Infraspecies_2) ~ 3L,
 
-        # Rank 4: All levels matched (only if use_infraspecies_2 = TRUE)
+        # Rank 4: All levels matched (quaternomial)
         use_infraspecies_2 &
           !is.na(Matched.Genus) &
           !is.na(Matched.Species) &
           !is.na(Matched.Infra.Rank) &
           !is.na(Matched.Infraspecies) &
           !is.na(Matched.Infra.Rank_2) &
-          !is.na(Matched.Infraspecies_2) &
-          Rank == 4 ~ TRUE,
+          !is.na(Matched.Infraspecies_2) ~ 4L,
 
-        # All other cases: Invalid rank match
-        TRUE ~ FALSE
-      )
+        # No valid match
+        TRUE ~ NA_integer_
+      ),
+
+      # Validate: Declared Rank MUST match Matched Rank
+      valid_rank = (Rank == Matched.Rank.Calculated)
     )
 
-  # Filter valid matches
+  # =========================================================================
+  # Filter: Keep ONLY matches with valid rank correspondence
+  # =========================================================================
+
   matched <- combined |>
-    dplyr::filter(valid_rank == TRUE)
+    dplyr::filter(valid_rank == TRUE, !is.na(Matched.Rank.Calculated))
 
-  # Identify invalid matches
+  # Identify INVALID matches (false positives to be rejected)
   invalid_matches <- combined |>
-    dplyr::filter(valid_rank == FALSE)
+    dplyr::filter(valid_rank == FALSE | is.na(Matched.Rank.Calculated))
 
+  # Add diagnostic info for invalid matches
+  if (nrow(invalid_matches) > 0) {
+    message(
+      "Info: ", nrow(invalid_matches), " potential matches were rejected due to rank mismatch.\n",
+      "  (e.g., trinomial input matching with binomial in database)"
+    )
+  }
+
+  # Combine all unmatched records
   unmatched <- dplyr::bind_rows(
-    invalid_matches,
+    invalid_matches,  # ← CRITICAL: Include rejected false positives
     Node_3_FALSE,
     Node_5b_FALSE
   )
@@ -373,27 +385,31 @@ matching_threatenedperu <- function(splist, target_df = "original") {
   Node_6b_processed <- Node_6a_TRUE |>
     fuzzy_match_infraspecies_within_species(target_prepared) |>
     dplyr::mutate(
-      valid_rank = dplyr::case_when(
+      # Recalculate matched rank
+      Matched.Rank.Calculated = dplyr::case_when(
         !is.na(Matched.Genus) &
           !is.na(Matched.Species) &
           !is.na(Matched.Infra.Rank) &
           !is.na(Matched.Infraspecies) &
-          is.na(Matched.Infraspecies_2) &
-          Rank == 3 ~ TRUE,
-        TRUE ~ FALSE
-      )
+          is.na(Matched.Infraspecies_2) ~ 3L,
+        TRUE ~ NA_integer_
+      ),
+      # Validate rank
+      valid_rank = (Rank == Matched.Rank.Calculated)
     )
 
   Node_6b_TRUE <- Node_6b_processed |>
     dplyr::filter(
       fuzzy_match_infraspecies == TRUE,
+      valid_rank == TRUE,
       Rank == 3
     )
 
   Node_6b_FALSE <- Node_6b_processed |>
     dplyr::filter(
-      fuzzy_match_infraspecies == TRUE,
-      Rank != 3
+      fuzzy_match_infraspecies == FALSE |
+        valid_rank == FALSE |
+        Rank != 3
     )
 
   # -------------------------------------------------------------------------
@@ -412,33 +428,27 @@ matching_threatenedperu <- function(splist, target_df = "original") {
       Node_7_processed <- Node_7_input |>
         fuzzy_match_infraspecies2_within_infraspecies(target_prepared) |>
         dplyr::mutate(
-          valid_rank = dplyr::case_when(
+          # Recalculate matched rank
+          Matched.Rank.Calculated = dplyr::case_when(
             !is.na(Matched.Genus) &
               !is.na(Matched.Species) &
               !is.na(Matched.Infra.Rank) &
               !is.na(Matched.Infraspecies) &
               Orig.Infra.Rank_2 == "F." &
-              !is.na(Matched.Infraspecies_2) &
-              Rank == 4 ~ TRUE,
-            TRUE ~ FALSE
-          )
+              !is.na(Matched.Infraspecies_2) ~ 4L,
+            TRUE ~ NA_integer_
+          ),
+          # Validate rank
+          valid_rank = (Rank == Matched.Rank.Calculated)
         )
 
-      # -----------------------------------------------------------------------
-      # DESIGN NOTE: Matched.Infra.Rank_2 = "F." is hardcoded
-      # -----------------------------------------------------------------------
-      # In threatenedperu database, second infraspecific level is ALWAYS "F."
-      # (forma). This is a database constraint, not a code limitation.
-      # The valid_rank check already verified Orig.Infra.Rank_2 == "F.",
-      # so hardcoding here ensures consistency with database structure.
-      # -----------------------------------------------------------------------
       Node_7_TRUE <- Node_7_processed |>
         dplyr::filter(
           valid_rank == TRUE,
           fuzzy_match_infraspecies_2 == TRUE
         ) |>
         dplyr::mutate(
-          Matched.Infra.Rank_2 = "F."  # Only valid category in database
+          Matched.Infra.Rank_2 = "F."
         )
 
       Node_7_FALSE <- Node_7_processed |>
@@ -478,7 +488,6 @@ matching_threatenedperu <- function(splist, target_df = "original") {
   # SECTION 6: Add Threat Information and Format Output
   # ==========================================================================
 
-  # Create base dataframe with all input records
   base_df <- splist_class |>
     dplyr::select(
       sorter, Orig.Name, Orig.Genus, Orig.Species,
@@ -486,7 +495,6 @@ matching_threatenedperu <- function(splist, target_df = "original") {
       Rank, Orig.Infra.Rank, Orig.Infra.Rank_2, Author
     )
 
-  # Exclude columns that already exist in base_df
   cols_to_exclude <- c(
     "Orig.Name", "Orig.Genus", "Orig.Species",
     "Orig.Infraspecies", "Orig.Infraspecies_2",
@@ -499,7 +507,6 @@ matching_threatenedperu <- function(splist, target_df = "original") {
       by = "sorter"
     )
 
-  # Initialize matching columns for records without match
   res_complete <- res_complete |>
     dplyr::mutate(
       matched = tidyr::replace_na(matched, FALSE),
@@ -514,43 +521,166 @@ matching_threatenedperu <- function(splist, target_df = "original") {
                                               Matched.Infraspecies_2)
     )
 
-  # -------------------------------------------------------------------------
-  # Join with Threat Information
-  # -------------------------------------------------------------------------
+  # =========================================================================
+  # CRITICAL: Add valid_rank if not present (from SECTION 4)
+  # =========================================================================
+  # valid_rank should have been calculated in SECTION 4, but ensure it exists
+  if (!"valid_rank" %in% colnames(res_complete)) {
+    warning(
+      "Column 'valid_rank' not found in res_complete. ",
+      "This indicates the validation in SECTION 4 was not applied. ",
+      "Calculating it now as a fallback.",
+      call. = FALSE,
+      immediate. = TRUE
+    )
+
+    res_complete <- res_complete |>
+      dplyr::mutate(
+        Matched.Rank.Calculated = dplyr::case_when(
+          !is.na(Matched.Genus) & is.na(Matched.Species) ~ 1L,
+          !is.na(Matched.Genus) & !is.na(Matched.Species) &
+            is.na(Matched.Infra.Rank) & is.na(Matched.Infraspecies) ~ 2L,
+          !is.na(Matched.Genus) & !is.na(Matched.Species) &
+            !is.na(Matched.Infra.Rank) & !is.na(Matched.Infraspecies) &
+            is.na(Matched.Infra.Rank_2) & is.na(Matched.Infraspecies_2) ~ 3L,
+          use_infraspecies_2 &
+            !is.na(Matched.Genus) & !is.na(Matched.Species) &
+            !is.na(Matched.Infra.Rank) & !is.na(Matched.Infraspecies) &
+            !is.na(Matched.Infra.Rank_2) & !is.na(Matched.Infraspecies_2) ~ 4L,
+          TRUE ~ NA_integer_
+        ),
+        valid_rank = (Rank == Matched.Rank.Calculated)
+      )
+  }
+
+  # =========================================================================
+  # Join threat information based on Rank AND valid_rank
+  # =========================================================================
+
   if (use_infraspecies_2) {
+
+    # -----------------------------------------------------------------------
+    # Prepare target_threat data
+    # -----------------------------------------------------------------------
     target_threat <- target_prepared |>
       dplyr::select(
-        genus, species, tag, infraspecies,
-        #tag_2, # ADDED: Include tag_2
-        infraspecies_2,
+        genus, species, tag, infraspecies, infraspecies_2,
         threat_category, accepted_name_author
       ) |>
-      dplyr::mutate(
-        tag = toupper(tag)#,
-        #tag_2 = toupper(tag_2)              # ADDED: Standardize to uppercase
+      dplyr::mutate(tag = toupper(tag)) |>
+      dplyr::distinct(genus, species, tag, infraspecies, infraspecies_2,
+                      .keep_all = TRUE)
+
+    # -----------------------------------------------------------------------
+    # RANK 2: Binomial matches with valid rank
+    # -----------------------------------------------------------------------
+    output_rank2 <- res_complete |>
+      dplyr::filter(
+        Rank == 2,
+        matched == TRUE,
+        valid_rank == TRUE  # ← CRITICAL: Only valid matches
       ) |>
-      dplyr::distinct(
-        genus, species, tag, infraspecies,
-        #tag_2,  #ADDED
-        infraspecies_2,
-        .keep_all = TRUE
+      dplyr::left_join(
+        target_threat |>
+          dplyr::filter(is.na(tag), is.na(infraspecies), is.na(infraspecies_2)),
+        by = c(
+          "Matched.Genus" = "genus",
+          "Matched.Species" = "species"
+        ),
+        na_matches = "never"
       )
 
-    output <- res_complete |>
-      dplyr::arrange(sorter) |>
+    # -----------------------------------------------------------------------
+    # RANK 3: Trinomial matches with valid rank
+    # -----------------------------------------------------------------------
+    output_rank3 <- res_complete |>
+      dplyr::filter(
+        Rank == 3,
+        matched == TRUE,
+        valid_rank == TRUE  # ← CRITICAL: Only valid matches
+      ) |>
       dplyr::left_join(
-        target_threat,
+        target_threat |>
+          dplyr::filter(!is.na(tag), !is.na(infraspecies), is.na(infraspecies_2)),
+        by = c(
+          "Matched.Genus" = "genus",
+          "Matched.Species" = "species",
+          "Matched.Infra.Rank" = "tag",
+          "Matched.Infraspecies" = "infraspecies"
+        ),
+        na_matches = "never"
+      )
+
+    # -----------------------------------------------------------------------
+    # RANK 4: Quaternomial matches with valid rank
+    # -----------------------------------------------------------------------
+    output_rank4 <- res_complete |>
+      dplyr::filter(
+        Rank == 4,
+        matched == TRUE,
+        valid_rank == TRUE  # ← CRITICAL: Only valid matches
+      ) |>
+      dplyr::left_join(
+        target_threat |>
+          dplyr::filter(!is.na(tag), !is.na(infraspecies), !is.na(infraspecies_2)),
         by = c(
           "Matched.Genus" = "genus",
           "Matched.Species" = "species",
           "Matched.Infra.Rank" = "tag",
           "Matched.Infraspecies" = "infraspecies",
-          #"Matched.Infra.Rank_2" = "tag_2",           # ADDED
           "Matched.Infraspecies_2" = "infraspecies_2"
-        )
+        ),
+        na_matches = "never"
       )
 
+    # -----------------------------------------------------------------------
+    # INVALID matches (matched == TRUE but valid_rank == FALSE)
+    # These are the FALSE POSITIVES we need to exclude
+    # -----------------------------------------------------------------------
+    output_invalid <- res_complete |>
+      dplyr::filter(
+        matched == TRUE,
+        valid_rank == FALSE  # ← These are invalid matches
+      ) |>
+      dplyr::mutate(
+        tag = NA_character_,
+        infraspecies = NA_character_,
+        infraspecies_2 = NA_character_,
+        threat_category = NA_character_,
+        accepted_name_author = NA_character_
+      )
+
+    # -----------------------------------------------------------------------
+    # Unmatched records (matched == FALSE)
+    # -----------------------------------------------------------------------
+    output_unmatched <- res_complete |>
+      dplyr::filter(matched == FALSE) |>
+      dplyr::mutate(
+        tag = NA_character_,
+        infraspecies = NA_character_,
+        infraspecies_2 = NA_character_,
+        threat_category = NA_character_,
+        accepted_name_author = NA_character_
+      )
+
+    # -----------------------------------------------------------------------
+    # Combine all outputs
+    # -----------------------------------------------------------------------
+    output <- dplyr::bind_rows(
+      output_rank2,
+      output_rank3,
+      output_rank4,
+      output_invalid,    # ← Include invalid matches with NA threat_category
+      output_unmatched
+    ) |>
+      dplyr::arrange(sorter)
+
   } else {
+
+    # =====================================================================
+    # For updated database (no infraspecies_2 support)
+    # =====================================================================
+
     target_threat <- target_prepared |>
       dplyr::select(
         genus, species, infraspecies, tag_acc,
@@ -558,19 +688,84 @@ matching_threatenedperu <- function(splist, target_df = "original") {
       ) |>
       dplyr::distinct(genus, species, tag_acc, infraspecies, .keep_all = TRUE)
 
-    output <- res_complete |>
-      dplyr::arrange(sorter) |>
+    # -----------------------------------------------------------------------
+    # RANK 2: Binomial matches with valid rank
+    # -----------------------------------------------------------------------
+    output_rank2 <- res_complete |>
+      dplyr::filter(
+        Rank == 2,
+        matched == TRUE,
+        valid_rank == TRUE
+      ) |>
       dplyr::left_join(
-        target_threat,
+        target_threat |>
+          dplyr::filter(is.na(tag_acc), is.na(infraspecies)),
+        by = c(
+          "Matched.Genus" = "genus",
+          "Matched.Species" = "species"
+        ),
+        na_matches = "never"
+      )
+
+    # -----------------------------------------------------------------------
+    # RANK 3: Trinomial matches with valid rank
+    # -----------------------------------------------------------------------
+    output_rank3 <- res_complete |>
+      dplyr::filter(
+        Rank == 3,
+        matched == TRUE,
+        valid_rank == TRUE
+      ) |>
+      dplyr::left_join(
+        target_threat |>
+          dplyr::filter(!is.na(tag_acc), !is.na(infraspecies)),
         by = c(
           "Matched.Genus" = "genus",
           "Matched.Species" = "species",
           "Matched.Infra.Rank" = "tag_acc",
           "Matched.Infraspecies" = "infraspecies"
-        )
+        ),
+        na_matches = "never"
       )
-  }
 
+    # -----------------------------------------------------------------------
+    # INVALID matches (matched == TRUE but valid_rank == FALSE)
+    # -----------------------------------------------------------------------
+    output_invalid <- res_complete |>
+      dplyr::filter(
+        matched == TRUE,
+        valid_rank == FALSE
+      ) |>
+      dplyr::mutate(
+        tag_acc = NA_character_,
+        infraspecies = NA_character_,
+        threat_category = NA_character_,
+        accepted_name_author = NA_character_
+      )
+
+    # -----------------------------------------------------------------------
+    # Unmatched records
+    # -----------------------------------------------------------------------
+    output_unmatched <- res_complete |>
+      dplyr::filter(matched == FALSE) |>
+      dplyr::mutate(
+        tag_acc = NA_character_,
+        infraspecies = NA_character_,
+        threat_category = NA_character_,
+        accepted_name_author = NA_character_
+      )
+
+    # -----------------------------------------------------------------------
+    # Combine all outputs
+    # -----------------------------------------------------------------------
+    output <- dplyr::bind_rows(
+      output_rank2,
+      output_rank3,
+      output_invalid,
+      output_unmatched
+    ) |>
+      dplyr::arrange(sorter)
+  }
   # ==========================================================================
   # SECTION 7: Calculate Matched Rank and Create Formatted Names
   # ==========================================================================
@@ -652,7 +847,7 @@ matching_threatenedperu <- function(splist, target_df = "original") {
         Matched.Rank == 4 &
           !is.na(Matched.Infra.Rank) &
           !is.na(Matched.Infra.Rank_2) &
-          !is.na(Matched.Infraspecies_2) ~ paste(    # ADDED: Validate epithet_2
+          !is.na(Matched.Infraspecies_2) ~ paste(
             str_to_simple_cap(Matched.Genus),
             stringr::str_to_lower(Matched.Species),
             stringr::str_to_lower(Matched.Infra.Rank),
@@ -749,50 +944,7 @@ matching_threatenedperu <- function(splist, target_df = "original") {
     }
   }
 
-  # Validate coherence between Matched.Rank and populated columns
-  validation <- output_f |>
-    dplyr::mutate(
-      valid_rank = dplyr::case_when(
-        is.na(Matched.Rank) ~ TRUE,  # No match is valid
-
-        Matched.Rank == 1 ~ !is.na(Matched.Genus) &
-          is.na(Matched.Species),
-
-        Matched.Rank == 2 ~ !is.na(Matched.Genus) &
-          !is.na(Matched.Species) &
-          is.na(Matched.Infra.Rank) &           # ADDED
-          is.na(Matched.Infraspecies),
-
-        Matched.Rank == 3 ~ !is.na(Matched.Genus) &
-          !is.na(Matched.Species) &
-          !is.na(Matched.Infra.Rank) &          # ADDED
-          !is.na(Matched.Infraspecies) &
-          is.na(Matched.Infra.Rank_2) &         # ADDED
-          is.na(Matched.Infraspecies_2),
-
-        Matched.Rank == 4 ~ !is.na(Matched.Genus) &
-          !is.na(Matched.Species) &
-          !is.na(Matched.Infra.Rank) &          # ADDED
-          !is.na(Matched.Infraspecies) &
-          !is.na(Matched.Infra.Rank_2) &        # ADDED
-          !is.na(Matched.Infraspecies_2),
-
-        TRUE ~ FALSE
-      )
-    )
-
-  invalid_ranks <- sum(!validation$valid_rank, na.rm = TRUE)
-
-  if (invalid_ranks > 0) {
-    warning(
-      invalid_ranks, " records have inconsistent Matched.Rank values.\n",
-      "Rank values do not match the populated taxonomic columns.\n",
-      "This indicates a bug in the matching pipeline.",
-      call. = FALSE,
-      immediate. = TRUE
-    )
-  }
-
+  # Add metadata
   # Add metadata about the process
   attr(output_f, "use_infraspecies_2") <- use_infraspecies_2
   attr(output_f, "target_database") <- target_df
