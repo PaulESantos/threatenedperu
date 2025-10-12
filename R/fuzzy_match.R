@@ -99,6 +99,7 @@ fuzzy_match_genus <- function(df, target_df = NULL){
   return(res)
 }
 
+#=====================================================================
 #' Fuzzy Match Species within Genus
 #'
 #' @description
@@ -191,103 +192,228 @@ fuzzy_match_species_within_genus <- function(df, target_df = NULL){
   return(res)
 }
 
-#' Fuzzy Match Infraspecies within Species
+#=====================================================================
+#' Fuzzy Match Infraspecific Epithet within Species
 #'
 #' @description
-#' This function performs a fuzzy match of specific infraspecies within an already matched epithet from the list of threatened species in the database.
+#' Performs fuzzy matching of infraspecific epithets within an already matched
+#' species where the infraspecific rank category (VAR., SUBSP., F., etc.) has
+#' already been validated via direct_match_infra_rank.
 #'
-#' @param df A tibble containing the species data to be matched.
-#' @param target_df A tibble representing the threatened species database containing the reference list of threatened species.
+#' @param df A tibble containing the species data to be matched. Must have
+#'   already passed through direct_match_infra_rank validation.
+#' @param target_df A tibble representing the threatened species database.
 #'
 #' @return
-#' A tibble with an additional logical column fuzzy_match_infraspecies_within_species, indicating whether the specific infraspecies was successfully fuzzy matched within the matched species (`TRUE`) or not (`FALSE`).
+#' A tibble with two additional columns:
+#' - `fuzzy_match_infraspecies`: Logical indicating whether the infraspecific
+#'   epithet was successfully fuzzy matched (`TRUE`) or not (`FALSE`)
+#' - `fuzzy_infraspecies_dist`: Numeric indicating the string distance of the match
+#'
+#' @details
+#' This function assumes that infraspecific rank categories have already been
+#' validated. It only performs fuzzy matching on the infraspecific epithet
+#' (e.g., "ovatoformes" vs "ovatoformis") within the same rank category.
+#'
 #' @keywords internal
-fuzzy_match_infraspecies_within_species <- function(df, target_df = NULL){
-  assertthat::assert_that(all(c('Orig.Genus',
-                                'Orig.Species',
-                                'Orig.Infraspecies',
-                                'Orig.Infraspecies_2',
-                                'Matched.Genus') %in% colnames(df)))
+fuzzy_match_infraspecies_within_species <- function(df, target_df = NULL) {
 
-  if(nrow(df) == 0){
-    if(!all(c('fuzzy_match_infraspecies_within_species',
-              'fuzzy_infraspecies_dist') %in% colnames(df))){
-      return(tibble::add_column(df,
-                                fuzzy_match_infraspecies_within_species = NA,
-                                fuzzy_infraspecies_dist = NA))
+  # ==========================================================================
+  # SECTION 1: Validate Required Columns
+  # ==========================================================================
+
+  required_cols <- c(
+    'Orig.Genus',
+    'Orig.Species',
+    'Orig.Infra.Rank',
+    'Orig.Infraspecies',
+    'Orig.Infraspecies_2',
+    'Matched.Genus',
+    'Matched.Species'
+  )
+
+  assertthat::assert_that(
+    all(required_cols %in% colnames(df)),
+    msg = paste(
+      "Missing required columns:",
+      paste(setdiff(required_cols, colnames(df)), collapse = ", ")
+    )
+  )
+
+  # ==========================================================================
+  # SECTION 2: Handle Empty Input
+  # ==========================================================================
+
+  if (nrow(df) == 0) {
+    if (!all(c('fuzzy_match_infraspecies', 'fuzzy_infraspecies_dist') %in% colnames(df))) {
+      return(
+        tibble::add_column(
+          df,
+          fuzzy_match_infraspecies = logical(0),
+          fuzzy_infraspecies_dist = numeric(0)
+        )
+      )
     } else {
       return(df)
     }
   }
 
-  if('fuzzy_infraspecies_dist' %in% colnames(df)){
+  # ==========================================================================
+  # SECTION 3: Remove Existing Distance Column (Sequential Matching)
+  # ==========================================================================
+
+  if ('fuzzy_infraspecies_dist' %in% colnames(df)) {
     df <- df |>
       dplyr::mutate(fuzzy_infraspecies_dist = NULL)
   }
 
+  # ==========================================================================
+  # SECTION 4: Process Each Matched Species Separately
+  # ==========================================================================
+
   res <- df |>
     dplyr::group_by(Matched.Species) |>
     dplyr::group_split() |>
-    map_dfr_progress(fuzzy_match_infraspecies_within_species_helper,
-                     target_df) |>
-    dplyr::relocate(c('Orig.Genus',
-                      'Orig.Species',
-                      'Orig.Infraspecies',
-                      'Orig.Infraspecies_2'))
+    map_dfr_progress(
+      fuzzy_match_infraspecies_within_species_helper,
+      target_df
+    ) |>
+    dplyr::relocate(c(
+      'Orig.Genus',
+      'Orig.Species',
+      'Orig.Infra.Rank',
+      'Orig.Infraspecies',
+      'Orig.Infraspecies_2'
+    ))
 
   return(res)
 }
 
-fuzzy_match_infraspecies_within_species_helper <- function(df, target_df){
-  species <- df |>
-    dplyr::distinct(Matched.Species) |>
-    unlist()
 
-  get_threatened_infraspecies <- function(species, target_df = NULL){
-    return(target_df |>
-             dplyr::filter(species %in% species) |>
-             dplyr::select(c('genus', 'species',
-                             'infraspecies')))
+#' Helper: Fuzzy Match Infraspecific Epithet within Species
+#'
+#' @description
+#' Helper function that performs fuzzy matching of infraspecific epithets
+#' for a single matched species. The infraspecific rank category must already
+#' be validated.
+#'
+#' @param df A tibble containing data for a single matched species.
+#' @param target_df A tibble representing the threatened species database.
+#'
+#' @return A tibble with fuzzy match results and logical indicator.
+#'
+#' @keywords internal
+fuzzy_match_infraspecies_within_species_helper <- function(df, target_df) {
+
+  # ==========================================================================
+  # SECTION 1: Extract Matched Species
+  # ==========================================================================
+
+  species_matched <- df|>
+    dplyr::distinct(Matched.Species) |>
+    dplyr::pull(Matched.Species)
+
+  # ==========================================================================
+  # SECTION 2: Define Database Subset Function
+  # ==========================================================================
+
+  get_threatened_infraspecies <- function(species_matched, target_df = NULL) {
+    return(
+      target_df |>
+        dplyr::filter(species %in% species_matched) |>
+        dplyr::select(c(
+          'genus',
+          'species',
+          'tag',
+          'infraspecies'
+        )) |>
+        dplyr::mutate(tag = toupper(tag)) |>  # Standardize to uppercase
+        tidyr::drop_na(tag, infraspecies)      # Only complete infraspecific taxa
+    )
   }
 
+  # Memoize for performance
   memoised_get_threatened_infrasp <- memoise::memoise(get_threatened_infraspecies)
 
-  database_subset <- memoised_get_threatened_infrasp(species, target_df) |>
-    tidyr::drop_na()
+  # ==========================================================================
+  # SECTION 3: Get Database Subset for Current Species
+  # ==========================================================================
+
+  database_subset <- memoised_get_threatened_infrasp(species_matched,
+                                                     target_df)
+
+  # If no infraspecific taxa in database, mark all as unmatched
+  if (nrow(database_subset) == 0) {
+    return(
+      df |>
+        dplyr::mutate(
+          fuzzy_match_infraspecies = FALSE,
+          fuzzy_infraspecies_dist = NA_real_
+        )
+    )
+  }
+
+  # ==========================================================================
+  # SECTION 4: Fuzzy Match with Rank Category Filter
+  # ==========================================================================
+  # IMPORTANT: Only fuzzy match epithets within the SAME rank category
+  # This ensures "SUBSP. ovatoformes" only matches with "SUBSP. X" entries
+  # ==========================================================================
 
   matched <-
     df |>
+    # Join by exact rank to filter candidates
     fuzzyjoin::stringdist_left_join(database_subset,
                                     by = c('Orig.Infraspecies' = 'infraspecies'),
                                     distance_col = 'fuzzy_infraspecies_dist') |>
+    # Assign matched values
     dplyr::mutate(Matched.Infraspecies = infraspecies) |>
-    dplyr::select(-c('species', 'genus', 'infraspecies')) |>
-    dplyr::group_by(Orig.Genus, Orig.Species, Orig.Infraspecies) |>
+    dplyr::select(-c('species', 'genus', 'infraspecies', 'tag')) |>
+    dplyr::group_by(Orig.Genus, Orig.Species, Orig.Infra.Rank, Orig.Infraspecies) |>
     dplyr::filter(fuzzy_infraspecies_dist == min(fuzzy_infraspecies_dist)) |>
     dplyr::group_modify(
       ~ifelse(nrow(.x) == 0, return(.x),
               return(dplyr::slice_head(.x, n = 1)))
     ) |>
-    dplyr::ungroup()
+    dplyr::ungroup() |>
+    as.data.frame()
 
-  unmatched <- fuzzyjoin::stringdist_anti_join(dplyr::filter(df,
-                                                             !is.na(Orig.Infraspecies)),
-                                               database_subset,
-                                               by = c('Orig.Infraspecies' = 'infraspecies'))
+  # ==========================================================================
+  # SECTION 5: Identify Unmatched Records
+  # ==========================================================================
+  # Records where no matching rank category exists in database,
+  # or epithet distance is too large
+  # ==========================================================================
+
+  unmatched <-
+  fuzzyjoin::stringdist_anti_join(
+    dplyr::filter(df,
+                 !is.na(Orig.Infraspecies)),
+                 database_subset,
+                 by = c('Orig.Infraspecies' = 'infraspecies'))
+
+  # ==========================================================================
+  # SECTION 6: Validate Row Counts
+  # ==========================================================================
 
   assertthat::assert_that(nrow(df) == (nrow(matched) + nrow(unmatched)))
 
-  combined <-  dplyr::bind_rows(matched,
-                                unmatched,
-                                .id = 'fuzzy_match_infraspecies_within_species') |>
-    dplyr::mutate(fuzzy_match_infraspecies_within_species = (fuzzy_match_infraspecies_within_species == 1)) |>
+  combined <-
+    dplyr::bind_rows(matched,
+                    unmatched,
+                  .id = 'fuzzy_match_infraspecies') |>
+    dplyr::mutate(fuzzy_match_infraspecies = (fuzzy_match_infraspecies == "1")) |>
     dplyr::relocate(c('Orig.Genus',
                       'Orig.Species',
                       'Orig.Infraspecies',
+                      'Orig.Infra.Rank',
                       'Orig.Infraspecies_2'))
 
   return(combined)
 }
+
+
+#=====================================================================
 
 
 #' Fuzzy Match Infraspecies Level 2 within Infraspecies Level 1
@@ -409,7 +535,7 @@ fuzzy_match_infraspecies2_within_infraspecies_helper <- function(df, target_df) 
   combined <- dplyr::bind_rows(matched,
                                unmatched,
                                .id = 'fuzzy_match_infraspecies_2') |>
-    dplyr::mutate(fuzzy_match_infraspecies_2 = (fuzzy_match_infraspecies_2 == 1)) |>
+    dplyr::mutate(fuzzy_match_infraspecies_2 = (fuzzy_match_infraspecies_2 == "1")) |>
     dplyr::relocate(c('Orig.Genus',
                       'Orig.Species',
                       'Orig.Infraspecies',

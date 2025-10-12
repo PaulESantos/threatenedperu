@@ -1,44 +1,58 @@
-#' Direct Match
+
+#' Direct Match Species Names
 #'
 #' @description
-#' This function performs a direct match of species names. It matches the genus and species if the name is binomial, and matches the genus, species, and infra species if the name includes a subspecies.
+#' Performs direct matching of species names against the threatened species database.
+#' Matches binomial names (genus + species), trinomial names (+ infraspecies level 1),
+#' and quaternomial names (+ infraspecies level 2) when applicable.
 #'
 #' @param df A tibble containing the species data to be matched.
-#' @param target_df A tibble representing the threatened species database containing the reference list of threatened species.
+#' @param target_df A tibble representing the threatened species database containing
+#'   the reference list of threatened species.
+#' @param use_infraspecies_2 Logical. If TRUE (default), attempts to match quaternomial
+#'   names with infraspecies level 2. If FALSE, only matches up to infraspecies level 1.
 #'
 #' @return
-#' A tibble with an additional logical column direct_match indicating whether the binomial or trinomial name was successfully matched (`TRUE`) or not (`FALSE`).
+#' A tibble with an additional logical column `direct_match` indicating whether
+#' the name was successfully matched (`TRUE`) or not (`FALSE`).
 #'
 #' @keywords internal
 direct_match <- function(df, target_df = NULL, use_infraspecies_2 = TRUE) {
 
-  assertthat::assert_that(all(c('Orig.Genus', 'Orig.Species',
-                                'Orig.Infraspecies') %in% colnames(df)))
+  # ==========================================================================
+  # SECTION 1: Validate Input Columns
+  # ==========================================================================
 
-  # ========================================================================
-  # Validate Input Columns
-  # ========================================================================
+  # Basic required columns (always needed)
+  required_cols <- c(
+    'Orig.Genus',
+    'Orig.Species',
+    'Orig.Infra.Rank',
+    'Orig.Infraspecies'
+  )
 
-  # Columnas requeridas básicas (siempre deben existir)
-  required_cols <- c('Orig.Genus', 'Orig.Species', 'Orig.Infraspecies')
-
-  # Si se espera infraspecies_2, validar que exista
+  # Add infraspecies level 2 columns if needed
   if (use_infraspecies_2) {
-    required_cols <- c(required_cols, 'Orig.Infraspecies_2')
+    required_cols <- c(
+      required_cols,
+      'Orig.Infra.Rank_2',
+      'Orig.Infraspecies_2'
+    )
   }
 
-  # Validar que todas las columnas requeridas existan
+  # Check for missing columns
   missing_cols <- setdiff(required_cols, colnames(df))
   if (length(missing_cols) > 0) {
     stop(
-      "direct_match() requires columns: ", paste(missing_cols, collapse = ", "),
+      "direct_match() requires columns: ",
+      paste(missing_cols, collapse = ", "),
       "\nProvided dataframe is missing these columns.",
       "\nThis is likely a bug in the pipeline. Please report this issue.",
       call. = FALSE
     )
   }
 
-  # Manejo especial para dataframe vacío
+  # Handle empty dataframe
   if (nrow(df) == 0) {
     if (!'direct_match' %in% colnames(df)) {
       df <- tibble::add_column(df, direct_match = logical(0))
@@ -46,9 +60,19 @@ direct_match <- function(df, target_df = NULL, use_infraspecies_2 = TRUE) {
     return(df)
   }
 
-  # Asegurar que las columnas Matched también existan (para binding posterior)
-  matched_cols <- c('Matched.Genus', 'Matched.Species',
-                    'Matched.Infraspecies', 'Matched.Infraspecies_2')
+  # ==========================================================================
+  # SECTION 2: Initialize Matched Columns
+  # ==========================================================================
+
+  # Ensure all Matched columns exist (needed for binding later)
+  matched_cols <- c(
+    'Matched.Genus',
+    'Matched.Species',
+    'Matched.Infra.Rank',
+    'Matched.Infraspecies',
+    'Matched.Infra.Rank_2',
+    'Matched.Infraspecies_2'
+  )
 
   for (col in matched_cols) {
     if (!col %in% colnames(df)) {
@@ -56,106 +80,244 @@ direct_match <- function(df, target_df = NULL, use_infraspecies_2 = TRUE) {
     }
   }
 
- # Match binomial
+  # ==========================================================================
+  # SECTION 3: Prepare Target Database
+  # ==========================================================================
+
+  # Standardize infraspecific rank tags to uppercase for matching
+
+  if (use_infraspecies_2) {
+    target_prepared <-
+    target_df |>
+      dplyr::mutate(
+        tag = toupper(tag),
+        tag_2 = dplyr::if_else(!is.na(infraspecies_2), "F.", NA_character_)
+      )
+  }  else{
+    target_prepared <-
+    target_df |>
+      dplyr::mutate(
+        tag = toupper(tag_acc)
+      )
+  }
+
+  # ==========================================================================
+  # SECTION 4: Match Binomial Names (Rank 2)
+  # ==========================================================================
+
   matched_bino <- df |>
     dplyr::filter(Rank == 2) |>
-    dplyr::semi_join(target_df,
-                     by = c('Orig.Genus' = 'genus',
-                            'Orig.Species' = 'species')) |>
-    dplyr::mutate(Matched.Genus = Orig.Genus,
-                  Matched.Species = Orig.Species)
-matched_bino |> dim()
-  # Match infraspecies level 1
+    dplyr::semi_join(
+      target_prepared,
+      by = c('Orig.Genus' = 'genus', 'Orig.Species' = 'species')
+    ) |>
+    dplyr::mutate(
+      Matched.Genus = Orig.Genus,
+      Matched.Species = Orig.Species
+    )
+
+  # ==========================================================================
+  # SECTION 5: Match Trinomial Names (Rank 3 - Infraspecies Level 1)
+  # ==========================================================================
+
   matched_infra_1 <- df |>
     dplyr::filter(Rank == 3) |>
-    dplyr::semi_join(target_df,
-                     by = c('Orig.Genus' = 'genus',
-                            'Orig.Species' = 'species',
-                            'Orig.Infraspecies' = 'infraspecies')) |>
-    dplyr::mutate(Matched.Genus = Orig.Genus,
-                  Matched.Species = Orig.Species,
-                  Matched.Infraspecies = Orig.Infraspecies)
+    dplyr::semi_join(
+      target_prepared,
+      by = c(
+        'Orig.Genus' = 'genus',
+        'Orig.Species' = 'species',
+        'Orig.Infra.Rank' = 'tag',
+        'Orig.Infraspecies' = 'infraspecies'
+      )
+    ) |>
+    dplyr::mutate(
+      Matched.Genus = Orig.Genus,
+      Matched.Species = Orig.Species,
+      Matched.Infra.Rank = Orig.Infra.Rank,
+      Matched.Infraspecies = Orig.Infraspecies
+    )
 
-  # Match infraspecies level 2 (solo si use_infraspecies_2 = TRUE)
+  # ==========================================================================
+  # SECTION 6: Match Quaternomial Names (Rank 4 - Infraspecies Level 2)
+  # ==========================================================================
 
-  if(use_infraspecies_2) {
+  if (use_infraspecies_2) {
     matched_infra_2 <- df |>
       dplyr::filter(Rank == 4) |>
-      dplyr::semi_join(target_df,
-                       by = c('Orig.Genus' = 'genus',
-                              'Orig.Species' = 'species',
-                              'Orig.Infraspecies' = 'infraspecies',
-                              'Orig.Infraspecies_2' = 'infraspecies_2')) |>
-      dplyr::mutate(Matched.Genus = Orig.Genus,
-                    Matched.Species = Orig.Species,
-                    Matched.Infraspecies = Orig.Infraspecies,
-                    Matched.Infraspecies_2 = Orig.Infraspecies_2)
+      dplyr::semi_join(
+        target_prepared,
+        by = c(
+          'Orig.Genus' = 'genus',
+          'Orig.Species' = 'species',
+          'Orig.Infra.Rank' = 'tag',
+          'Orig.Infraspecies' = 'infraspecies',
+          'Orig.Infra.Rank_2' = 'tag_2',
+          'Orig.Infraspecies_2' = 'infraspecies_2'
+        )
+      ) |>
+      dplyr::mutate(
+        Matched.Genus = Orig.Genus,
+        Matched.Species = Orig.Species,
+        Matched.Infra.Rank = Orig.Infra.Rank,
+        Matched.Infraspecies = Orig.Infraspecies,
+        Matched.Infra.Rank_2 = Orig.Infra.Rank_2,
+        Matched.Infraspecies_2 = Orig.Infraspecies_2
+      )
+  }
 
-    matched <- dplyr::bind_rows(matched_bino,
-                                matched_infra_1,
-                                matched_infra_2) |>
+  # ==========================================================================
+  # SECTION 7: Combine Matched Records
+  # ==========================================================================
+
+  if (use_infraspecies_2) {
+    matched <- dplyr::bind_rows(
+      matched_bino,
+      matched_infra_1,
+      matched_infra_2
+    ) |>
       dplyr::filter(
         dplyr::case_when(
+          # Valid Rank 2: Genus + Species
           !is.na(Matched.Genus) & !is.na(Matched.Species) & Rank == 2 ~ TRUE,
-          !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) & Rank == 3 ~ TRUE,
-          !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) & !is.na(Matched.Infraspecies_2) & Rank == 4 ~ TRUE,
+
+          # Valid Rank 3: Genus + Species + Infraspecies level 1
+          !is.na(Matched.Genus) & !is.na(Matched.Species) &
+            !is.na(Matched.Infra.Rank) & !is.na(Matched.Infraspecies) &
+            Rank == 3 ~ TRUE,
+
+          # Valid Rank 4: Genus + Species + Infraspecies level 1 + level 2
+          !is.na(Matched.Genus) & !is.na(Matched.Species) &
+            !is.na(Matched.Infra.Rank) & !is.na(Matched.Infraspecies) &
+            !is.na(Matched.Infra.Rank_2) & !is.na(Matched.Infraspecies_2) &
+            Rank == 4 ~ TRUE,
+
           TRUE ~ FALSE
         )
       )
-
-    unmatched <- df |>
-      dplyr::anti_join(target_df,
-                       c('Orig.Genus' = 'genus',
-                         'Orig.Species' = 'species',
-                         'Orig.Infraspecies' = 'infraspecies',
-                         'Orig.Infraspecies_2' = 'infraspecies_2'))
-    # revisar se busca eliminar las obcerbaciones que
-    # forman parte tanto de los nombres originales como de los nombres
-    # actualizado
-    unmatched <-
-      unmatched |>
-      dplyr::filter(!sorter %in% matched$sorter )
-
   } else {
     matched <- dplyr::bind_rows(matched_bino, matched_infra_1) |>
       dplyr::filter(
         dplyr::case_when(
+          # Valid Rank 2: Genus + Species
           !is.na(Matched.Genus) & !is.na(Matched.Species) & Rank == 2 ~ TRUE,
-          !is.na(Matched.Genus) & !is.na(Matched.Species) & !is.na(Matched.Infraspecies) & Rank == 3 ~ TRUE,
+
+          # Valid Rank 3: Genus + Species + Infraspecies level 1
+          !is.na(Matched.Genus) & !is.na(Matched.Species) &
+            !is.na(Matched.Infra.Rank) & !is.na(Matched.Infraspecies) &
+            Rank == 3 ~ TRUE,
+
           TRUE ~ FALSE
         )
       )
-
-    unmatched <- df |>
-      dplyr::anti_join(target_df,
-                       c('Orig.Genus' = 'genus',
-                         'Orig.Species' = 'species',
-                         'Orig.Infraspecies' = 'infraspecies'))
-    # revisar se busca eliminar las obcerbaciones que
-    # forman parte tanto de los nombres originales como de los nombres
-    # actualizado
-    unmatched <-
-      unmatched |>
-      dplyr::filter(!sorter %in% matched$sorter )
   }
 
-  assertthat::assert_that(nrow(df) == (nrow(matched) + nrow(unmatched)))
+  # ==========================================================================
+  # SECTION 8: Identify Unmatched Records
+  # ==========================================================================
+
+  if (use_infraspecies_2) {
+    # Unmatched Rank 2: Binomial names that didn't match
+    unmatched_bino <- df |>
+      dplyr::filter(Rank == 2) |>
+      dplyr::anti_join(
+        target_prepared,
+        by = c('Orig.Genus' = 'genus', 'Orig.Species' = 'species')
+      )
+
+    # Unmatched Rank 3: Infraspecies level 1 that didn't match
+    unmatched_infra_1 <- df |>
+      dplyr::filter(Rank == 3) |>
+      dplyr::anti_join(
+        target_prepared,
+        by = c(
+          'Orig.Genus' = 'genus',
+          'Orig.Species' = 'species',
+          'Orig.Infra.Rank' = 'tag',
+          'Orig.Infraspecies' = 'infraspecies'
+        )
+      )
+
+    # Unmatched Rank 4: Infraspecies level 2 that didn't match
+    unmatched_infra_2 <- df |>
+      dplyr::filter(Rank == 4) |>
+      dplyr::anti_join(
+        target_prepared,
+        by = c(
+          'Orig.Genus' = 'genus',
+          'Orig.Species' = 'species',
+          'Orig.Infra.Rank' = 'tag',
+          'Orig.Infraspecies' = 'infraspecies',
+          'Orig.Infra.Rank_2' = 'tag_2',
+          'Orig.Infraspecies_2' = 'infraspecies_2'
+        )
+      )
+
+    unmatched <- dplyr::bind_rows(
+      unmatched_bino,
+      unmatched_infra_1,
+      unmatched_infra_2
+    )
+
+  } else {
+    # When not using infraspecies_2, combine unmatched from Rank 2 and 3
+    unmatched <- df |>
+      dplyr::anti_join(
+        target_prepared,
+        by = c(
+          'Orig.Genus' = 'genus',
+          'Orig.Species' = 'species',
+          'Orig.Infra.Rank' = 'tag',
+          'Orig.Infraspecies' = 'infraspecies'
+        )
+      ) |>
+      dplyr::filter(!sorter %in% matched$sorter)
+  }
+
+  # ==========================================================================
+  # SECTION 9: Validate Row Counts
+  # ==========================================================================
+
+  assertthat::assert_that(
+    nrow(df) == (nrow(matched) + nrow(unmatched)),
+    msg = paste0(
+      "Row count mismatch in direct_match():\n",
+      "Input: ", nrow(df), " rows\n",
+      "Matched: ", nrow(matched), " rows\n",
+      "Unmatched: ", nrow(unmatched), " rows"
+    )
+  )
+
+  # ==========================================================================
+  # SECTION 10: Combine and Return Results
+  # ==========================================================================
 
   combined <- dplyr::bind_rows(matched, unmatched, .id = 'direct_match') |>
     dplyr::mutate(direct_match = (direct_match == 1))
 
-  if(use_infraspecies_2) {
+  # Reorder columns based on whether infraspecies_2 is used
+  if (use_infraspecies_2) {
     combined <- combined |>
-      dplyr::relocate(c('Orig.Genus', 'Orig.Species', 'Orig.Infraspecies',
-                        'Orig.Infraspecies_2'))
+      dplyr::relocate(c(
+        'Orig.Genus',
+        'Orig.Species',
+        'Orig.Infra.Rank',
+        'Orig.Infraspecies',
+        'Orig.Infra.Rank_2',
+        'Orig.Infraspecies_2'
+      ))
   } else {
     combined <- combined |>
-      dplyr::relocate(c('Orig.Genus', 'Orig.Species', 'Orig.Infraspecies'))
+      dplyr::relocate(c(
+        'Orig.Genus',
+        'Orig.Species',
+        'Orig.Infra.Rank',
+        'Orig.Infraspecies'
+      ))
   }
 
   return(combined)
 }
-
 
 #' Match Genus Name
 #'
@@ -282,4 +444,186 @@ direct_match_species_within_genus <- function(df, target_df = NULL){
                      target_df)
 
   return(res)
+}
+
+
+#' Direct Match Infraspecific Rank within Species
+#'
+#' @description
+#' Performs direct matching of infraspecific rank (VAR., SUBSP., F., etc.) within
+#' an already matched species. This is a prerequisite before fuzzy matching the
+#' infraspecific epithet, as the rank category must match exactly.
+#'
+#' @param df A tibble containing the species data to be matched.
+#' @param target_df A tibble representing the threatened species database.
+#'
+#' @return
+#' A tibble with an additional logical column `direct_match_infra_rank` indicating
+#' whether the infraspecific rank was successfully matched (`TRUE`) or not (`FALSE`).
+#'
+#' @details
+#' This function ensures that the infraspecific category (e.g., VAR., SUBSP., F.)
+#' matches exactly before attempting fuzzy matching on the infraspecific epithet.
+#' This prevents inappropriate matches like "var. alba" matching with "subsp. alba"
+#' which, despite having similar epithets, are taxonomically different entities.
+#'
+#' @keywords internal
+direct_match_infra_rank_within_species <- function(df, target_df = NULL) {
+
+  # ==========================================================================
+  # SECTION 1: Validate Input
+  # ==========================================================================
+
+  assertthat::assert_that(
+    all(c(
+      'Orig.Genus',
+      'Orig.Species',
+      'Orig.Infra.Rank',
+      'Orig.Infraspecies',
+      'Matched.Genus',
+      'Matched.Species'
+    ) %in% colnames(df))
+  )
+
+  # Handle empty input
+  if (nrow(df) == 0) {
+    if (!'direct_match_infra_rank' %in% colnames(df)) {
+      return(tibble::add_column(df, direct_match_infra_rank = NA))
+    } else {
+      return(df)
+    }
+  }
+
+  # ==========================================================================
+  # SECTION 2: Process by Matched Species
+  # ==========================================================================
+
+  res <- df |>
+    dplyr::group_by(Matched.Species) |>
+    dplyr::group_split() |>
+    map_dfr_progress(
+      direct_match_infra_rank_within_species_helper,
+      target_df
+    ) |>
+    dplyr::relocate(c(
+      'Orig.Genus',
+      'Orig.Species',
+      'Orig.Infra.Rank',
+      'Orig.Infraspecies'
+    ))
+
+  return(res)
+}
+
+
+#' Helper: Direct Match Infraspecific Rank within Species
+#'
+#' @description
+#' Helper function that performs the actual matching of infraspecific ranks
+#' for a single matched species.
+#'
+#' @param df A tibble containing data for a single matched species.
+#' @param target_df A tibble representing the threatened species database.
+#'
+#' @return A tibble with match results.
+#'
+#' @keywords internal
+direct_match_infra_rank_within_species_helper <- function(df, target_df) {
+
+  # ==========================================================================
+  # SECTION 1: Get Matched Species
+  # ==========================================================================
+
+  species_matched <- df |>
+    dplyr::distinct(Matched.Species) |>
+    dplyr::pull(Matched.Species)
+  # ==========================================================================
+  # SECTION 2: Define Helper Function for Database Subset
+  # ==========================================================================
+
+  get_threatened_infra_ranks <- function(species, target_df = NULL) {
+    return(
+      target_df |>
+        dplyr::filter(species %in% species_matched) |>
+        dplyr::select(c(
+          'genus',
+          'species',
+          'tag',           # Infraspecific rank category
+          'infraspecies'
+        )) |>
+        dplyr::mutate(tag = toupper(tag)) |> # Standardize to uppercase
+        tidyr::drop_na(tag, infraspecies)     # Only infraspecific taxa
+    )
+  }
+
+  # Memoize for performance
+  memoised_get_infra_ranks <- memoise::memoise(get_threatened_infra_ranks)
+
+  # ==========================================================================
+  # SECTION 3: Get Database Subset
+  # ==========================================================================
+
+  database_subset <- memoised_get_infra_ranks(species_matched, target_df)
+
+  # If no infraspecific taxa exist for this species, all are unmatched
+  if (nrow(database_subset) == 0) {
+    return(
+      df |>
+        dplyr::mutate(direct_match_infra_rank = FALSE)
+    )
+  }
+
+  # ==========================================================================
+  # SECTION 4: Match Infraspecific Rank
+  # ==========================================================================
+  # Match only if BOTH rank category AND epithet match exactly
+  # This is strict matching - rank must be identical (VAR. != SUBSP.)
+  # ==========================================================================
+
+  matched <-
+  df |>
+    dplyr::semi_join(
+      database_subset,
+      by = c(
+        'Orig.Infra.Rank' = 'tag')
+    ) |>
+    dplyr::mutate(
+      Matched.Infra.Rank = Orig.Infra.Rank
+    )
+
+  # ==========================================================================
+  # SECTION 5: Identify Unmatched
+  # ==========================================================================
+
+  unmatched <- df |>
+    dplyr::anti_join(
+      database_subset,
+      by = c(
+        'Orig.Infra.Rank' = 'tag'))
+
+  # ==========================================================================
+  # SECTION 6: Validate and Combine
+  # ==========================================================================
+
+  assertthat::assert_that(
+    nrow(df) == (nrow(matched) + nrow(unmatched)),
+    msg = "Row count mismatch in direct_match_infra_rank_within_species_helper"
+  )
+
+  combined <- dplyr::bind_rows(
+    matched,
+    unmatched,
+    .id = 'direct_match_infra_rank'
+  ) |>
+    dplyr::mutate(
+      direct_match_infra_rank = (direct_match_infra_rank == 1)
+    ) |>
+    dplyr::relocate(c(
+      'Orig.Genus',
+      'Orig.Species',
+      'Orig.Infra.Rank',
+      'Orig.Infraspecies'
+    ))
+
+  return(combined)
 }

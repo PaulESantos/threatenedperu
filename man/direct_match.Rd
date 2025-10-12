@@ -2,19 +2,26 @@
 % Please edit documentation in R/direct_match.R
 \name{direct_match}
 \alias{direct_match}
-\title{Direct Match}
+\title{Direct Match Species Names}
 \usage{
 direct_match(df, target_df = NULL, use_infraspecies_2 = TRUE)
 }
 \arguments{
 \item{df}{A tibble containing the species data to be matched.}
 
-\item{target_df}{A tibble representing the threatened species database containing the reference list of threatened species.}
+\item{target_df}{A tibble representing the threatened species database containing
+the reference list of threatened species.}
+
+\item{use_infraspecies_2}{Logical. If TRUE (default), attempts to match quaternomial
+names with infraspecies level 2. If FALSE, only matches up to infraspecies level 1.}
 }
 \value{
-A tibble with an additional logical column direct_match indicating whether the binomial or trinomial name was successfully matched (`TRUE`) or not (`FALSE`).
+A tibble with an additional logical column `direct_match` indicating whether
+the name was successfully matched (`TRUE`) or not (`FALSE`).
 }
 \description{
-This function performs a direct match of species names. It matches the genus and species if the name is binomial, and matches the genus, species, and infra species if the name includes a subspecies.
+Performs direct matching of species names against the threatened species database.
+Matches binomial names (genus + species), trinomial names (+ infraspecies level 1),
+and quaternomial names (+ infraspecies level 2) when applicable.
 }
 \keyword{internal}

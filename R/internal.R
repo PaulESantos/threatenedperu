@@ -202,9 +202,9 @@
 
   # Siempre inicializar ambos niveles
   df$Orig.Infraspecies <- NA_character_
-  df$Infra.Rank <- NA_character_
+  df$Orig.Infra.Rank <- NA_character_
   df$Orig.Infraspecies_2 <- NA_character_
-  df$Infra.Rank_2 <- NA_character_
+  df$Orig.Infra.Rank_2 <- NA_character_
 
   for (i in 1:nrow(df)) {
     non_empty <- which(df[i, infra_cols] != "")
@@ -212,13 +212,13 @@
     if (length(non_empty) >= 1) {
       first_idx <- non_empty[1]
       df$Orig.Infraspecies[i] <- df[i, infra_cols[first_idx]]
-      df$Infra.Rank[i] <- infra_ranks[first_idx]
+      df$Orig.Infra.Rank[i] <- infra_ranks[first_idx]
     }
 
     if (length(non_empty) >= 2) {
       second_idx <- non_empty[2]
       df$Orig.Infraspecies_2[i] <- df[i, infra_cols[second_idx]]
-      df$Infra.Rank_2[i] <- infra_ranks[second_idx]
+      df$Orig.Infra.Rank_2[i] <- infra_ranks[second_idx]
     }
   }
 
@@ -237,12 +237,12 @@
       is.na(df$Orig.Infraspecies) ~ 2L,
 
     # Rank 3: Género + especie + infraspecies nivel 1, sin nivel 2
-    !is.na(df$Orig.Genus) & !is.na(df$Orig.Species) &
+    !is.na(df$Orig.Genus) & !is.na(df$Orig.Species) & !is.na(df$Orig.Infra.Rank) &
       !is.na(df$Orig.Infraspecies) & is.na(df$Orig.Infraspecies_2) ~ 3L,
 
     # Rank 4: Género + especie + infraspecies nivel 1 + nivel 2
-    !is.na(df$Orig.Genus) & !is.na(df$Orig.Species) &
-      !is.na(df$Orig.Infraspecies) & !is.na(df$Orig.Infraspecies_2) ~ 4L,
+    !is.na(df$Orig.Genus) & !is.na(df$Orig.Species) & !is.na(df$Orig.Infra.Rank_2) &
+      !is.na(df$Orig.Infraspecies) & !is.na(df$Orig.Infra.Rank_2) & !is.na(df$Orig.Infraspecies_2) ~ 4L,
 
     # Casos inválidos
     TRUE ~ NA_integer_
@@ -274,8 +274,8 @@
 
   column_order <- c(
     "sorter", "Orig.Name", "Orig.Genus", "Orig.Species", "Author",
-    "Orig.Infraspecies", "Infra.Rank",
-    "Orig.Infraspecies_2", "Infra.Rank_2",
+    "Orig.Infraspecies", "Orig.Infra.Rank",
+    "Orig.Infraspecies_2", "Orig.Infra.Rank_2",
     "Rank"
   )
 
@@ -294,56 +294,6 @@
   return(df)
 
 }
-
-# .transform_split_classify <- function(df) {
-#   # Convertir a data frame
-#   df <- as.data.frame(df)
-#   df$sorter <- 1:nrow(df)
-#
-#   # Vector de columnas infraespecíficas en orden de prioridad
-#   infra_cols <- c("Subspecies", "Variety", "Subvariety", "Forma", "Subforma")
-#   infra_ranks <- c("SUBSP.", "VAR.", "SUBVAR.", "F.", "SUBF.")
-#
-#   # Inicializar columnas para dos niveles
-#   df$Orig.Infraspecies <- NA_character_
-#   df$Infra.Rank <- NA_character_
-#   df$Orig.Infraspecies_2 <- NA_character_
-#   df$Infra.Rank_2 <- NA_character_
-#
-#   # Iterar por cada fila
-#   for (i in 1:nrow(df)) {
-#     # Encontrar categorías infraespecíficas no vacías
-#     non_empty <- which(df[i, infra_cols] != "")
-#
-#     # Asignar primer nivel (si existe)
-#     if (length(non_empty) >= 1) {
-#       first_idx <- non_empty[1]
-#       df$Orig.Infraspecies[i] <- df[i, infra_cols[first_idx]]
-#       df$Infra.Rank[i] <- infra_ranks[first_idx]
-#     }
-#
-#     # Asignar segundo nivel (si existe)
-#     if (length(non_empty) >= 2) {
-#       second_idx <- non_empty[2]
-#       df$Orig.Infraspecies_2[i] <- df[i, infra_cols[second_idx]]
-#       df$Infra.Rank_2[i] <- infra_ranks[second_idx]
-#     }
-#   }
-#
-#   # Añadir la columna Rank
-#   df$Rank <- ifelse(!is.na(df$Orig.Genus) & !is.na(df$Orig.Species) & is.na(df$Orig.Infraspecies), 2,
-#                     ifelse(!is.na(df$Orig.Genus) & !is.na(df$Orig.Species) & !is.na(df$Orig.Infraspecies) & is.na(df$Orig.Infraspecies_2), 3,
-#                            ifelse(!is.na(df$Orig.Genus) & !is.na(df$Orig.Species) & !is.na(df$Orig.Infraspecies) & !is.na(df$Orig.Infraspecies_2), 4,
-#                                   ifelse(is.na(df$Orig.Species) & is.na(df$Orig.Infraspecies), 1, NA))))
-#
-#   # Reordenar las columnas
-#   column_order <- c("sorter", "Orig.Name", "Orig.Genus", "Orig.Species", "Author",
-#                     "Orig.Infraspecies", "Infra.Rank",
-#                     "Orig.Infraspecies_2", "Infra.Rank_2", "Rank")
-#   df <- df[, column_order]
-#
-#   return(df)
-# }
 
 
 # ---------------------------------------------------------------
@@ -486,7 +436,7 @@ utils::globalVariables(c(
 
   # Columnas de ranks
   "Rank", "Matched.Rank", "Comp.Rank", "Match.Level",
-  "Infra.Rank", "Infra.Rank_2",
+  "Orig.Infra.Rank", "Orig.Infra.Rank_2",
 
   # Columnas de status
   "Threat.Status", "threat_category", "taxonomic_status",
@@ -521,6 +471,9 @@ utils::globalVariables(c(
   "Original.Matched", "Original.Status", "Protected.DS043", "Updated.Matched",
   "Updated.Status", "protected_ds_043", "data",
 
+  "direct_match_infra_rank", "fuzzy_match_infraspecies", "tag", "tag_2",
+  "tag_accdirect_match_infra_rank", "fuzzy_match_infraspecies",
+  "tag", "tag_2", "tag_acc",
   # Para operadores pipe
   "%>%"
 ))

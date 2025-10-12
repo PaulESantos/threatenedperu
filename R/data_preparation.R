@@ -78,6 +78,15 @@
 ##
 #  threatenedperu <-
 #  threatenedperu |>
+#    dplyr::mutate(scientific_name =
+#                    ifelse(scientific_name == "Islaya omasensis",
+#                           "Eriosyce omasensis",
+#                           scientific_name),
+#                  author =
+#                    ifelse(scientific_name == "Islaya omasensis",
+#                           "(Ostolaza & Mischler) Ostolaza",
+#                           author)
+#                  ) |>
 #    dplyr::select(scientific_name,
 #                  author,
 #                  family,
@@ -131,6 +140,17 @@
 ##
 ##
 ##  # Al final, después de crear ambos datasets
+# threatenedperu <- threatenedperu:::threatenedperu |>
+#  dplyr::mutate(infraspecies_2 = toupper(infraspecies_2),
+#                tag = toupper(tag) )
+# threatenedperu
+#
+# threatenedperu_syn <- threatenedperu:::threatenedperu_syn |>
+#   dplyr::mutate(tag_acc = toupper(tag_acc) )
+# threatenedperu_syn |>
+#   dplyr::filter(!is.na(tag)) |>
+#   as.data.frame()
+#
 # usethis::use_data(
 #   threatenedperu,
 #   threatenedperu_syn,
