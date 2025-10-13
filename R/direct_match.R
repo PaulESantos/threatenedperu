@@ -468,6 +468,7 @@ direct_match_species_within_genus <- function(df, target_df = NULL){
   return(res)
 }
 
+######################################################################
 
 #' Direct Match Infraspecific Rank within Species
 #'
@@ -478,6 +479,9 @@ direct_match_species_within_genus <- function(df, target_df = NULL){
 #'
 #' @param df A tibble containing the species data to be matched.
 #' @param target_df A tibble representing the threatened species database.
+#' @param use_infraspecies_2 Logical. If TRUE, uses 'tag' column (original database
+#'   with infraspecies_2 support). If FALSE, uses 'tag_acc' column (updated database
+#'   without infraspecies_2 support). This parameter must match the database being used.
 #'
 #' @return
 #' A tibble with an additional logical column `direct_match_infra_rank` indicating
@@ -489,8 +493,14 @@ direct_match_species_within_genus <- function(df, target_df = NULL){
 #' This prevents inappropriate matches like "var. alba" matching with "subsp. alba"
 #' which, despite having similar epithets, are taxonomically different entities.
 #'
+#' The function automatically uses the correct column name based on use_infraspecies_2:
+#' - TRUE: Uses 'tag' column (original DS 043-2006-AG database)
+#' - FALSE: Uses 'tag_acc' column (updated nomenclature database)
+#'
 #' @keywords internal
-direct_match_infra_rank_within_species <- function(df, target_df = NULL) {
+direct_match_infra_rank_within_species <- function(df,
+                                                   target_df = NULL,
+                                                   use_infraspecies_2 = TRUE) {
 
   # ==========================================================================
   # SECTION 1: Validate Input
@@ -504,13 +514,19 @@ direct_match_infra_rank_within_species <- function(df, target_df = NULL) {
       'Orig.Infraspecies',
       'Matched.Genus',
       'Matched.Species'
-    ) %in% colnames(df))
+    ) %in% colnames(df)),
+    msg = "Missing required columns in dataframe for direct_match_infra_rank_within_species"
+  )
+
+  assertthat::assert_that(
+    is.logical(use_infraspecies_2) && length(use_infraspecies_2) == 1,
+    msg = "use_infraspecies_2 must be a single logical value (TRUE or FALSE)"
   )
 
   # Handle empty input
   if (nrow(df) == 0) {
     if (!'direct_match_infra_rank' %in% colnames(df)) {
-      return(tibble::add_column(df, direct_match_infra_rank = NA))
+      return(tibble::add_column(df, direct_match_infra_rank = logical(0)))
     } else {
       return(df)
     }
@@ -525,7 +541,8 @@ direct_match_infra_rank_within_species <- function(df, target_df = NULL) {
     dplyr::group_split() |>
     map_dfr_progress(
       direct_match_infra_rank_within_species_helper,
-      target_df
+      target_df = target_df,
+      use_infraspecies_2 = use_infraspecies_2
     ) |>
     dplyr::relocate(c(
       'Orig.Genus',
@@ -542,15 +559,28 @@ direct_match_infra_rank_within_species <- function(df, target_df = NULL) {
 #'
 #' @description
 #' Helper function that performs the actual matching of infraspecific ranks
-#' for a single matched species.
+#' for a single matched species. Automatically handles both original and
+#' updated databases by using the appropriate column name (tag or tag_acc).
 #'
 #' @param df A tibble containing data for a single matched species.
 #' @param target_df A tibble representing the threatened species database.
+#' @param use_infraspecies_2 Logical. If TRUE, uses 'tag' column (original database).
+#'   If FALSE, uses 'tag_acc' column (updated database).
 #'
-#' @return A tibble with match results.
+#' @return A tibble with match results and logical indicator.
+#'
+#' @details
+#' The function performs the following steps:
+#' 1. Determines which column to use based on use_infraspecies_2
+#' 2. Extracts infraspecific ranks from the database for the matched species
+#' 3. Standardizes rank names to uppercase
+#' 4. Performs exact matching on the rank category
+#' 5. Returns matched and unmatched records with boolean indicator
 #'
 #' @keywords internal
-direct_match_infra_rank_within_species_helper <- function(df, target_df) {
+direct_match_infra_rank_within_species_helper <- function(df,
+                                                          target_df,
+                                                          use_infraspecies_2 = TRUE) {
 
   # ==========================================================================
   # SECTION 1: Get Matched Species
@@ -559,33 +589,75 @@ direct_match_infra_rank_within_species_helper <- function(df, target_df) {
   species_matched <- df |>
     dplyr::distinct(Matched.Species) |>
     dplyr::pull(Matched.Species)
+
   # ==========================================================================
-  # SECTION 2: Define Helper Function for Database Subset
+  # SECTION 2: Determine Which Column to Use
   # ==========================================================================
 
-  get_threatened_infra_ranks <- function(species, target_df = NULL) {
-    return(
-      target_df |>
-        dplyr::filter(species %in% species_matched) |>
-        dplyr::select(c(
-          'genus',
-          'species',
-          'tag',           # Infraspecific rank category
-          'infraspecies'
-        )) |>
-        dplyr::mutate(tag = toupper(tag)) |> # Standardize to uppercase
-        tidyr::drop_na(tag, infraspecies)     # Only infraspecific taxa
-    )
+  # Original database (threatenedperu) uses 'tag'
+  # Updated database (threatenedperu_syn) uses 'tag_acc'
+  tag_column <- if (use_infraspecies_2) "tag" else "tag_acc"
+
+  # ==========================================================================
+  # SECTION 3: Define Helper Function for Database Subset
+  # ==========================================================================
+
+  get_threatened_infra_ranks <- function(species_matched,
+                                         target_df = NULL,
+                                         tag_col = "tag") {
+
+    # Validate that the required column exists in target_df
+    if (!tag_col %in% colnames(target_df)) {
+      stop(
+        "Column '", tag_col, "' not found in target_df.\n",
+        "Expected column: ", tag_col, "\n",
+        "Available columns: ", paste(colnames(target_df), collapse = ", "),
+        call. = FALSE
+      )
+    }
+
+    # Select the appropriate columns based on database type
+    result <- target_df |>
+      dplyr::filter(species %in% species_matched) |>
+      dplyr::select(c(
+        'genus',
+        'species',
+        dplyr::all_of(tag_col),  # ← Use dynamic column name
+        'infraspecies'
+      ))
+
+    # Rename to 'tag' for consistency in subsequent operations
+    if (tag_col == "tag_acc") {
+      result <- result |> dplyr::rename(tag = tag_acc)
+    }
+
+    # Standardize and filter
+    result |>
+      dplyr::mutate(tag = toupper(tag)) |>  # Standardize to uppercase
+      tidyr::drop_na(tag, infraspecies)     # Only complete infraspecific taxa
   }
 
-  # Memoize for performance
+  # Memoize for performance (caching results)
   memoised_get_infra_ranks <- memoise::memoise(get_threatened_infra_ranks)
 
   # ==========================================================================
-  # SECTION 3: Get Database Subset
+  # SECTION 4: Get Database Subset
   # ==========================================================================
 
-  database_subset <- memoised_get_infra_ranks(species_matched, target_df)
+  database_subset <- tryCatch({
+    memoised_get_infra_ranks(
+      species_matched = species_matched,
+      target_df = target_df,
+      tag_col = tag_column
+    )
+  }, error = function(e) {
+    stop(
+      "Error getting infraspecific ranks for species '", species_matched, "':\n",
+      e$message,
+      "\nDatabase type: ", if(use_infraspecies_2) "original (tag)" else "updated (tag_acc)",
+      call. = FALSE
+    )
+  })
 
   # If no infraspecific taxa exist for this species, all are unmatched
   if (nrow(database_subset) == 0) {
@@ -596,40 +668,46 @@ direct_match_infra_rank_within_species_helper <- function(df, target_df) {
   }
 
   # ==========================================================================
-  # SECTION 4: Match Infraspecific Rank
+  # SECTION 5: Match Infraspecific Rank
   # ==========================================================================
-  # Match only if BOTH rank category AND epithet match exactly
-  # This is strict matching - rank must be identical (VAR. != SUBSP.)
+  # Match only if rank category matches exactly
+  # (VAR. must match VAR., SUBSP. must match SUBSP., etc.)
+  # Note: database_subset now has 'tag' column regardless of original name
   # ==========================================================================
 
-  matched <-
-  df |>
+  matched <- df |>
     dplyr::semi_join(
       database_subset,
-      by = c(
-        'Orig.Infra.Rank' = 'tag')
+      by = c('Orig.Infra.Rank' = 'tag')  # ← Always use 'tag' after renaming
     ) |>
     dplyr::mutate(
       Matched.Infra.Rank = Orig.Infra.Rank
     )
 
   # ==========================================================================
-  # SECTION 5: Identify Unmatched
+  # SECTION 6: Identify Unmatched
   # ==========================================================================
 
   unmatched <- df |>
     dplyr::anti_join(
       database_subset,
-      by = c(
-        'Orig.Infra.Rank' = 'tag'))
+      by = c('Orig.Infra.Rank' = 'tag')  # ← Always use 'tag' after renaming
+    )
 
   # ==========================================================================
-  # SECTION 6: Validate and Combine
+  # SECTION 7: Validate and Combine
   # ==========================================================================
 
   assertthat::assert_that(
     nrow(df) == (nrow(matched) + nrow(unmatched)),
-    msg = "Row count mismatch in direct_match_infra_rank_within_species_helper"
+    msg = paste0(
+      "Row count mismatch in direct_match_infra_rank_within_species_helper:\n",
+      "Input: ", nrow(df), " rows\n",
+      "Matched: ", nrow(matched), " rows\n",
+      "Unmatched: ", nrow(unmatched), " rows\n",
+      "Species: ", species_matched, "\n",
+      "Database type: ", if(use_infraspecies_2) "original (tag)" else "updated (tag_acc)"
+    )
   )
 
   combined <- dplyr::bind_rows(

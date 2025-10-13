@@ -429,51 +429,126 @@ get_threatened_data <- function(type = c("original", "updated")) {
 }
 
 # ---------------------------------------------------------------
+# ---------------------------------------------------------------
 utils::globalVariables(c(
-  # Columnas de matching
-  "Matched.Genus", "Matched.Species", "Matched.Infraspecies", "Matched.Infraspecies_2",
-  "Orig.Genus", "Orig.Species", "Orig.Infraspecies", "Orig.Infraspecies_2",
+  # ============================================================
+  # Columnas de nombres originales (Orig.*)
+  # ============================================================
+  "Orig.Genus",
+  "Orig.Infra.Rank",
+  "Orig.Infra.Rank_2",
+  "Orig.Infraspecies",
+  "Orig.Infraspecies_2",
+  "Orig.Name",
+  "Orig.Species",
 
-  # Columnas de ranks
-  "Rank", "Matched.Rank", "Comp.Rank", "Match.Level",
-  "Orig.Infra.Rank", "Orig.Infra.Rank_2",
+  # ============================================================
+  # Columnas de nombres matched (Matched.*)
+  # ============================================================
+  "Matched.Genus",
+  "Matched.Infra.Rank",
+  "Matched.Infra.Rank_2",
+  "Matched.Infraspecies",
+  "Matched.Infraspecies_2",
+  "Matched.Name",
+  "Matched.Rank",
+  "Matched.Rank.Calculated",
+  "Matched.Species",
 
-  # Columnas de status
-  "Threat.Status", "threat_category", "taxonomic_status",
-  "Threat_Category", "Threat_Status",
+  # ============================================================
+  # Columnas de ranks y niveles taxonómicos
+  # ============================================================
+  "Comp.Rank",
+  "Match.Level",
+  "Rank",
 
-  # Columnas de nombres
-  "Orig.Name", "Matched.Name", "scientific_name", "accepted_name",
+  # ============================================================
+  # Columnas de threat status
+  # ============================================================
+  "Threat.Status",
+  "Threat_Category",
+  "Threat_Status",
+  "threat_category",
+
+  # ============================================================
+  # Columnas de nomenclatura y taxonomía
+  # ============================================================
+  "accepted_name",
   "accepted_name_author",
+  "scientific_name",
+  "taxonomic_status",
 
-  # Columnas de matching methods
-  "direct_match", "genus_match", "fuzzy_match_genus",
-  "direct_match_species_within_genus", "suffix_match_species_within_genus",
-  "fuzzy_match_species_within_genus", "fuzzy_match_infraspecies_within_species",
+  # ============================================================
+  # Columnas de métodos de matching (booleanos)
+  # ============================================================
+  "direct_match",
+  "direct_match_infra_rank",
+  "direct_match_species_within_genus",
+  "fuzzy_match_genus",
+  "fuzzy_match_infraspecies",
   "fuzzy_match_infraspecies_2",
+  "fuzzy_match_infraspecies_within_species",
+  "fuzzy_match_species_within_genus",
+  "genus_match",
+  "matched",
+  "suffix_match_species_within_genus",
+  "valid_rank",
 
-  # Columnas de distancias
-  "fuzzy_genus_dist", "fuzzy_species_dist",
-  "fuzzy_infraspecies_dist", "fuzzy_infraspecies_2_dist",
+  # ============================================================
+  # Columnas de distancias (fuzzy matching)
+  # ============================================================
+  "fuzzy_genus_dist",
+  "fuzzy_infraspecies_2_dist",
+  "fuzzy_infraspecies_dist",
+  "fuzzy_species_dist",
 
-  # Columnas auxiliares
-  "sorter", "matched", "val_rank_declred", "valid_rank",
+  # ============================================================
+  # Columnas de base de datos (target_df)
+  # ============================================================
+  "family",
+  "Family",
+  "genus",
+  "infraspecies",
+  "infraspecies_2",
+  "species",
+  "tag",
+  "tag_2",
+  "tag_acc",
 
-  # Columnas de base de datos
-  "genus", "species", "infraspecies", "infraspecies_2",
-  "family", "Family",
+  # ============================================================
+  # Columnas de consolidación (is_ds043_2006_ag)
+  # ============================================================
+  "Accepted.Name",
+  "Consolidated.Category",
+  "Consolidated.Name",
+  "Consolidated.Status",
+  "Final.Source",
+  "Found.In.Original",
+  "Found.In.Updated",
+  "Input.Name",
+  "Is.Synonym",
+  "Match.Scenario",
+  "Nomenclature.Status",
+  "Original.Index",
+  "Original.Matched",
+  "Original.Status",
+  "Protected.DS043",
+  "protected_ds_043",
+  "Updated.Matched",
+  "Updated.Status",
 
-  # Otras
-  "Author", "Category", "Count", "Original.Index",
-  "Accepted.Name", "Consolidated.Category", "Consolidated.Name",
-  "Consolidated.Status", "Final.Source", "Found.In.Original", "Found.In.Updated",
-  "Input.Name", "Is.Synonym", "Match.Scenario", "Nomenclature.Status",
-  "Original.Matched", "Original.Status", "Protected.DS043", "Updated.Matched",
-  "Updated.Status", "protected_ds_043", "data",
+  # ============================================================
+  # Columnas auxiliares y de control
+  # ============================================================
+  "Author",
+  "Category",
+  "Count",
+  "data",
+  "sorter",
+  "val_rank_declred",
 
-  "direct_match_infra_rank", "fuzzy_match_infraspecies", "tag", "tag_2",
-  "tag_accdirect_match_infra_rank", "fuzzy_match_infraspecies",
-  "tag", "tag_2", "tag_acc", "Matched.Rank.Calculated",
-  # Para operadores pipe
+  # ============================================================
+  # Operadores
+  # ============================================================
   "%>%"
 ))

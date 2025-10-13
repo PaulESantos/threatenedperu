@@ -216,7 +216,9 @@ fuzzy_match_species_within_genus <- function(df, target_df = NULL){
 #' (e.g., "ovatoformes" vs "ovatoformis") within the same rank category.
 #'
 #' @keywords internal
-fuzzy_match_infraspecies_within_species <- function(df, target_df = NULL) {
+fuzzy_match_infraspecies_within_species <- function(df,
+                                                    target_df = NULL,
+                                                    use_infraspecies_2 = TRUE) {
 
   # ==========================================================================
   # SECTION 1: Validate Required Columns
@@ -303,7 +305,9 @@ fuzzy_match_infraspecies_within_species <- function(df, target_df = NULL) {
 #' @return A tibble with fuzzy match results and logical indicator.
 #'
 #' @keywords internal
-fuzzy_match_infraspecies_within_species_helper <- function(df, target_df) {
+fuzzy_match_infraspecies_within_species_helper <- function(df,
+                                                           target_df,
+                                                           use_infraspecies_2 = TRUE) {
 
   # ==========================================================================
   # SECTION 1: Extract Matched Species
@@ -316,20 +320,42 @@ fuzzy_match_infraspecies_within_species_helper <- function(df, target_df) {
   # ==========================================================================
   # SECTION 2: Define Database Subset Function
   # ==========================================================================
+  #tag_column <- if (use_infraspecies_2) "tag" else "tag_acc"
 
-  get_threatened_infraspecies <- function(species_matched, target_df = NULL) {
-    return(
-      target_df |>
-        dplyr::filter(species %in% species_matched) |>
-        dplyr::select(c(
-          'genus',
-          'species',
-          'tag',
-          'infraspecies'
-        )) |>
-        dplyr::mutate(tag = toupper(tag)) |>  # Standardize to uppercase
-        tidyr::drop_na(tag, infraspecies)      # Only complete infraspecific taxa
-    )
+  get_threatened_infraspecies <- function(species_matched,
+                                          target_df = NULL,
+                                          use_infraspecies_2 = TRUE) {
+
+    if(use_infraspecies_2 == TRUE){
+      return(
+        target_df |>
+          dplyr::filter(species %in% species_matched) |>
+          dplyr::select(c(
+            'genus',
+            'species',
+            'tag',
+            'infraspecies'
+          )) |>
+          dplyr::mutate(tag = toupper(tag)) |>  # Standardize to uppercase
+          tidyr::drop_na(tag, infraspecies)      # Only complete infraspecific taxa
+      )
+    } else{
+      return(
+        target_df |>
+          dplyr::filter(species %in% species_matched) |>
+          dplyr::select(c(
+            'genus',
+            'species',
+            'tag_acc',
+            'infraspecies'
+          )) |>
+          dplyr::mutate(tag_acc = toupper(tag_acc)) |>  # Standardize to uppercase
+          tidyr::drop_na(tag_acc, infraspecies)      # Only complete infraspecific taxa
+      )
+    }
+
+
+
   }
 
   # Memoize for performance
