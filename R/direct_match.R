@@ -6,6 +6,12 @@
 #' and quaternomial names (+ infraspecies level 2) when applicable.
 #'
 #' @param df A tibble containing the species data to be matched.
+#' @param source Character string specifying which database version to use.
+#'   Options are:
+#'   \itemize{
+#'     \item \code{"original"} (default): Uses the original threatened species database
+#'     \item \code{"updated"}: Uses the updated database with synonyms
+#'   }
 #' @param target_df A tibble representing the threatened species database containing
 #'   the reference list of threatened species.
 #' @param use_infraspecies_2 Logical. If TRUE (default), attempts to match quaternomial
@@ -17,7 +23,7 @@
 #' the name was successfully matched (`TRUE`) or not (`FALSE`).
 #'
 #' @keywords internal
-direct_match <- function(df, target_df = NULL, use_infraspecies_2 = TRUE) {
+direct_match <- function(df, target_df = NULL, source = "original", use_infraspecies_2 = TRUE) {
 
   # ==========================================================================
   # SECTION 1: Validate Input Columns
@@ -119,7 +125,7 @@ direct_match <- function(df, target_df = NULL, use_infraspecies_2 = TRUE) {
   # ==========================================================================
   # SECTION 5: Match Trinomial Names (Rank 3 - Infraspecies Level 1)
   # ==========================================================================
-  if (use_infraspecies_2) {
+  if (source == "original") {
     matched_infra_1 <-
     df |>
       dplyr::filter(Rank == 3) |>

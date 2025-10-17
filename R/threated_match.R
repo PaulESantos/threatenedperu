@@ -7,7 +7,7 @@
 #' successful matches while maintaining accuracy.
 #'
 #' @param splist A character vector containing the species names to be matched.
-#' @param target_df Character string specifying which database version to use.
+#' @param source Character string specifying which database version to use.
 #'   Options are:
 #'   \itemize{
 #'     \item \code{"original"} (default): Uses the original threatened species database
@@ -32,34 +32,34 @@
 #' }
 #'
 #' @export
-matching_threatenedperu <- function(splist, target_df = "original") {
+matching_threatenedperu <- function(splist, source = "original") {
 
   # ==========================================================================
   # SECTION 1: Target Database Selection and Validation
   # ==========================================================================
 
   # Validate target_df parameter
-  if (!is.character(target_df) || length(target_df) != 1) {
-    stop("target_df must be a single character string: 'original' or 'updated'",
+  if (!is.character(source) || length(source) != 1) {
+    stop("source must be a single character string: 'original' or 'updated'",
          call. = FALSE)
   }
 
-  if (!target_df %in% c("original", "updated")) {
+  if (!source %in% c("original", "updated")) {
     stop(
-      "Invalid target_df value: '", target_df, "'. Must be 'original' or 'updated'",
+      "Invalid source value: '", source, "'. Must be 'original' or 'updated'",
       call. = FALSE
     )
   }
 
   # Determine if infraspecies_2 is supported
-  use_infraspecies_2 <- (target_df == "original")
+  use_infraspecies_2 <- (source == "original")
 
   # Load database using internal function
   target_prepared <- tryCatch({
-    get_threatened_data(type = target_df)
+    get_threatened_data(type = source)
   }, error = function(e) {
     stop(
-      "Failed to load database '", target_df, "'.\n",
+      "Failed to load database '", source, "'.\n",
       "Error: ", e$message,
       call. = FALSE
     )
@@ -77,7 +77,7 @@ matching_threatenedperu <- function(splist, target_df = "original") {
   missing_cols <- setdiff(required_cols, names(target_prepared))
   if (length(missing_cols) > 0) {
     stop(
-      "Database '", target_df, "' missing required columns: ",
+      "Database '", source, "' missing required columns: ",
       paste(missing_cols, collapse = ", "),
       call. = FALSE
     )
@@ -134,7 +134,7 @@ matching_threatenedperu <- function(splist, target_df = "original") {
     df$Matched.Infraspecies_2 <- NA_character_
 
     message(
-      "Note: Using database '", target_df,
+      "Note: Using database '", source,
       "' which supports the updated names of species listed in DS 043-2006-AG."
     )
   }
@@ -148,7 +148,7 @@ matching_threatenedperu <- function(splist, target_df = "original") {
 
     warning(
       rank4_count, " species with Rank 4 detected. ",
-      "Database '", target_df, "' does not support infraspecies_2. ",
+      "Database '", source, "' does not support infraspecies_2. ",
       "These species will not be matched.",
       call. = FALSE,
       immediate. = TRUE

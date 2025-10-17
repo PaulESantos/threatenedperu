@@ -546,6 +546,7 @@ utils::globalVariables(c(
   "data",
   "sorter",
   "val_rank_declred",
+  "source",
 
   # ============================================================
   # Operadores
