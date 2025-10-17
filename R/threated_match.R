@@ -38,7 +38,7 @@ matching_threatenedperu <- function(splist, source = "original") {
   # SECTION 1: Target Database Selection and Validation
   # ==========================================================================
 
-  # Validate target_df parameter
+  # Validate source parameter
   if (!is.character(source) || length(source) != 1) {
     stop("source must be a single character string: 'original' or 'updated'",
          call. = FALSE)
@@ -371,7 +371,7 @@ matching_threatenedperu <- function(splist, source = "original") {
     )
 
   Node_6a_processed <- Node_6_input |>
-    direct_match_infra_rank_within_species(target_prepared,
+    direct_match_infra_rank_within_species(target_df = target_prepared,
                                            source = source)
 
   Node_6a_TRUE <- Node_6a_processed |>
@@ -384,7 +384,7 @@ matching_threatenedperu <- function(splist, source = "original") {
   # Node 6b: Fuzzy Match Infraspecific Epithet
   # -------------------------------------------------------------------------
   Node_6b_processed <- Node_6a_TRUE |>
-    fuzzy_match_infraspecies_within_species(target_prepared,
+    fuzzy_match_infraspecies_within_species(target_df = target_prepared,
                                             source = source) |>
     dplyr::mutate(
       # Recalculate matched rank

@@ -20,7 +20,8 @@
 #' the name was successfully matched (`TRUE`) or not (`FALSE`).
 #'
 #' @keywords internal
-direct_match <- function(df, target_df = NULL,
+direct_match <- function(df,
+                         target_df = NULL,
                          source = "original") {
 
   # ==========================================================================
