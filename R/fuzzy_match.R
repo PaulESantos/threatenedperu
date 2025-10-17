@@ -327,8 +327,8 @@ fuzzy_match_infraspecies_within_species_helper <- function(df,
 
   get_threatened_infraspecies <- function(species_matched,
                                           target_df = NULL,
-                                          use_infraspecies_2 = TRUE) {
-
+                                          source = source) {
+    use_infraspecies_2 <- (source == "original")
     if(use_infraspecies_2 == TRUE){
       return(
         target_df |>

@@ -371,7 +371,8 @@ matching_threatenedperu <- function(splist, source = "original") {
     )
 
   Node_6a_processed <- Node_6_input |>
-    direct_match_infra_rank_within_species(target_prepared)
+    direct_match_infra_rank_within_species(target_prepared,
+                                           source = source)
 
   Node_6a_TRUE <- Node_6a_processed |>
     dplyr::filter(direct_match_infra_rank == TRUE)
@@ -383,7 +384,8 @@ matching_threatenedperu <- function(splist, source = "original") {
   # Node 6b: Fuzzy Match Infraspecific Epithet
   # -------------------------------------------------------------------------
   Node_6b_processed <- Node_6a_TRUE |>
-    fuzzy_match_infraspecies_within_species(target_prepared) |>
+    fuzzy_match_infraspecies_within_species(target_prepared,
+                                            source = source) |>
     dplyr::mutate(
       # Recalculate matched rank
       Matched.Rank.Calculated = dplyr::case_when(
@@ -947,7 +949,7 @@ matching_threatenedperu <- function(splist, source = "original") {
   # Add metadata
   # Add metadata about the process
   attr(output_f, "use_infraspecies_2") <- use_infraspecies_2
-  attr(output_f, "target_database") <- target_df
+  attr(output_f, "target_database") <- source
   attr(output_f, "matching_date") <- Sys.Date()
   attr(output_f, "n_input") <- nrow(splist_class)
   attr(output_f, "n_matched") <- sum(output_f$matched, na.rm = TRUE)
