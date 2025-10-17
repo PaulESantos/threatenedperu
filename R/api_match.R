@@ -346,7 +346,7 @@ comparison_table_ds043 <- function(splist) {
 #'
 #' @param splist A character vector containing the list of species names to be
 #' checked for threatened status in Peru.
-#' @param target_type Character string specifying which database version to use.
+#' @param source Character string specifying which database version to use.
 #'   Options are:
 #'   \itemize{
 #'     \item \code{"original"} (default): Uses the original threatened species database
@@ -376,7 +376,7 @@ comparison_table_ds043 <- function(splist) {
 #'                                        return_details = TRUE)
 #' detailed_results
 #' }
-is_threatened_peru <- function(splist, target_type = "original", return_details = FALSE) {
+is_threatened_peru <- function(splist, source = "original", return_details = FALSE) {
 
   # Input validation
   if (!is.character(splist)) {
@@ -401,7 +401,7 @@ is_threatened_peru <- function(splist, target_type = "original", return_details 
   }
 
   # Perform detailed matching
-  match_df <- matching_threatenedperu(splist_clean, target_df = target_type)
+  match_df <- matching_threatenedperu(splist_clean, source = source)
 
 
   # Create result vector for all original inputs

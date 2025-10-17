@@ -14,21 +14,20 @@
 #'   }
 #' @param target_df A tibble representing the threatened species database containing
 #'   the reference list of threatened species.
-#' @param use_infraspecies_2 Logical. If TRUE (default), attempts to match quaternomial
-#'   names with infraspecies level 2. If FALSE, only matches up to infraspecies level 1.
-#'   This should match the database capabilities (original = TRUE, updated = FALSE).
 #'
 #' @return
 #' A tibble with an additional logical column `direct_match` indicating whether
 #' the name was successfully matched (`TRUE`) or not (`FALSE`).
 #'
 #' @keywords internal
-direct_match <- function(df, target_df = NULL, source = "original", use_infraspecies_2 = TRUE) {
+direct_match <- function(df, target_df = NULL,
+                         source = "original") {
 
   # ==========================================================================
   # SECTION 1: Validate Input Columns
   # ==========================================================================
-
+  # Determinar si la base de datos soporta infraspecies_2
+  use_infraspecies_2 <- (source == "original")
   # Basic required columns (always needed)
   required_cols <- c(
     'Orig.Genus',
@@ -244,7 +243,7 @@ direct_match <- function(df, target_df = NULL, source = "original", use_infraspe
   # SECTION 8: Identify Unmatched Records
   # ==========================================================================
 
-  if (use_infraspecies_2) {
+  if (source == "original") {
     # Unmatched Rank 2: Binomial names that didn't match
     unmatched_bino <- df |>
       dplyr::filter(Rank == 2) |>
@@ -485,9 +484,12 @@ direct_match_species_within_genus <- function(df, target_df = NULL){
 #'
 #' @param df A tibble containing the species data to be matched.
 #' @param target_df A tibble representing the threatened species database.
-#' @param use_infraspecies_2 Logical. If TRUE, uses 'tag' column (original database
-#'   with infraspecies_2 support). If FALSE, uses 'tag_acc' column (updated database
-#'   without infraspecies_2 support). This parameter must match the database being used.
+#' @param source Character string specifying which database version to use.
+#'   Options are:
+#'   \itemize{
+#'     \item \code{"original"} (default): Uses the original threatened species database
+#'     \item \code{"updated"}: Uses the updated database with synonyms
+#'   }
 #'
 #' @return
 #' A tibble with an additional logical column `direct_match_infra_rank` indicating
@@ -506,8 +508,9 @@ direct_match_species_within_genus <- function(df, target_df = NULL){
 #' @keywords internal
 direct_match_infra_rank_within_species <- function(df,
                                                    target_df = NULL,
-                                                   use_infraspecies_2 = TRUE) {
-
+                                                   source = "original") {
+  # Determinar capacidad de la BD
+  use_infraspecies_2 <- (source == "original")
   # ==========================================================================
   # SECTION 1: Validate Input
   # ==========================================================================
@@ -548,7 +551,7 @@ direct_match_infra_rank_within_species <- function(df,
     map_dfr_progress(
       direct_match_infra_rank_within_species_helper,
       target_df = target_df,
-      use_infraspecies_2 = use_infraspecies_2
+      source = source
     ) |>
     dplyr::relocate(c(
       'Orig.Genus',
@@ -570,8 +573,12 @@ direct_match_infra_rank_within_species <- function(df,
 #'
 #' @param df A tibble containing data for a single matched species.
 #' @param target_df A tibble representing the threatened species database.
-#' @param use_infraspecies_2 Logical. If TRUE, uses 'tag' column (original database).
-#'   If FALSE, uses 'tag_acc' column (updated database).
+#' @param source Character string specifying which database version to use.
+#'   Options are:
+#'   \itemize{
+#'     \item \code{"original"} (default): Uses the original threatened species database
+#'     \item \code{"updated"}: Uses the updated database with synonyms
+#'   }
 #'
 #' @return A tibble with match results and logical indicator.
 #'
@@ -586,7 +593,10 @@ direct_match_infra_rank_within_species <- function(df,
 #' @keywords internal
 direct_match_infra_rank_within_species_helper <- function(df,
                                                           target_df,
-                                                          use_infraspecies_2 = TRUE) {
+                                                          source = "original") {
+
+  # Determinar capacidad de la BD
+  use_infraspecies_2 <- (source == "original")
 
   # ==========================================================================
   # SECTION 1: Get Matched Species

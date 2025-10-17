@@ -218,8 +218,9 @@ fuzzy_match_species_within_genus <- function(df, target_df = NULL){
 #' @keywords internal
 fuzzy_match_infraspecies_within_species <- function(df,
                                                     target_df = NULL,
-                                                    use_infraspecies_2 = TRUE) {
-
+                                                    source = "original") {
+  # Determinar capacidad de la BD
+  use_infraspecies_2 <- (source == "original")
   # ==========================================================================
   # SECTION 1: Validate Required Columns
   # ==========================================================================
@@ -278,7 +279,8 @@ fuzzy_match_infraspecies_within_species <- function(df,
     dplyr::group_split() |>
     map_dfr_progress(
       fuzzy_match_infraspecies_within_species_helper,
-      target_df
+      target_df,
+      source = source
     ) |>
     dplyr::relocate(c(
       'Orig.Genus',
@@ -307,8 +309,9 @@ fuzzy_match_infraspecies_within_species <- function(df,
 #' @keywords internal
 fuzzy_match_infraspecies_within_species_helper <- function(df,
                                                            target_df,
-                                                           use_infraspecies_2 = TRUE) {
-
+                                                           source = "original") {
+  # Determinar capacidad de la BD
+  use_infraspecies_2 <- (source == "original")
   # ==========================================================================
   # SECTION 1: Extract Matched Species
   # ==========================================================================
@@ -366,7 +369,8 @@ fuzzy_match_infraspecies_within_species_helper <- function(df,
   # ==========================================================================
 
   database_subset <- memoised_get_threatened_infrasp(species_matched,
-                                                     target_df)
+                                                     target_df,
+                                                     source = source)
 
   # If no infraspecific taxa in database, mark all as unmatched
   if (nrow(database_subset) == 0) {

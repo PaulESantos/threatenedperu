@@ -4,7 +4,7 @@
 \alias{direct_match}
 \title{Direct Match Species Names}
 \usage{
-direct_match(df, target_df = NULL, use_infraspecies_2 = TRUE)
+direct_match(df, target_df = NULL, source = "original")
 }
 \arguments{
 \item{df}{A tibble containing the species data to be matched.}
@@ -12,9 +12,12 @@ direct_match(df, target_df = NULL, use_infraspecies_2 = TRUE)
 \item{target_df}{A tibble representing the threatened species database containing
 the reference list of threatened species.}
 
-\item{use_infraspecies_2}{Logical. If TRUE (default), attempts to match quaternomial
-names with infraspecies level 2. If FALSE, only matches up to infraspecies level 1.
-This should match the database capabilities (original = TRUE, updated = FALSE).}
+\item{source}{Character string specifying which database version to use.
+Options are:
+\itemize{
+  \item \code{"original"} (default): Uses the original threatened species database
+  \item \code{"updated"}: Uses the updated database with synonyms
+}}
 }
 \value{
 A tibble with an additional logical column `direct_match` indicating whether

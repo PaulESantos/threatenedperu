@@ -4,7 +4,11 @@
 \alias{fuzzy_match_infraspecies_within_species}
 \title{Fuzzy Match Infraspecific Epithet within Species}
 \usage{
-fuzzy_match_infraspecies_within_species(df, target_df = NULL)
+fuzzy_match_infraspecies_within_species(
+  df,
+  target_df = NULL,
+  source = "original"
+)
 }
 \arguments{
 \item{df}{A tibble containing the species data to be matched. Must have

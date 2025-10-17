@@ -4,13 +4,13 @@
 \alias{is_threatened_peru}
 \title{Check if species are threatened listed in DS 043-2006-AG  Peru}
 \usage{
-is_threatened_peru(splist, target_type = "original", return_details = FALSE)
+is_threatened_peru(splist, source = "original", return_details = FALSE)
 }
 \arguments{
 \item{splist}{A character vector containing the list of species names to be
 checked for threatened status in Peru.}
 
-\item{target_type}{Character string specifying which database version to use.
+\item{source}{Character string specifying which database version to use.
 Options are:
 \itemize{
   \item \code{"original"} (default): Uses the original threatened species database

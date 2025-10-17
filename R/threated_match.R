@@ -28,7 +28,7 @@
 #' @examples
 #' \dontrun{
 #' species_list <- c("Cattleya maxima", "Polylepis incana")
-#' results <- matching_threatenedperu(species_list, target_df = "original")
+#' results <- matching_threatenedperu(species_list, source = "original")
 #' }
 #'
 #' @export
@@ -164,7 +164,7 @@ matching_threatenedperu <- function(splist, source = "original") {
   # -------------------------------------------------------------------------
   Node_1_processed <- df |>
     direct_match(target_df = target_prepared,
-                 use_infraspecies_2 = use_infraspecies_2)
+                 source = source)
 
   Node_1_TRUE <- Node_1_processed |>
     dplyr::filter(direct_match == TRUE)

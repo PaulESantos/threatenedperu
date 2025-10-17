@@ -4,12 +4,12 @@
 \alias{matching_threatenedperu}
 \title{Match Species Names to Threatened Plant List of Peru}
 \usage{
-matching_threatenedperu(splist, target_df = "original")
+matching_threatenedperu(splist, source = "original")
 }
 \arguments{
 \item{splist}{A character vector containing the species names to be matched.}
 
-\item{target_df}{Character string specifying which database version to use.
+\item{source}{Character string specifying which database version to use.
 Options are:
 \itemize{
   \item \code{"original"} (default): Uses the original threatened species database
@@ -33,7 +33,7 @@ infraspecific ranks at two levels (when supported by the database).
 \examples{
 \dontrun{
 species_list <- c("Cattleya maxima", "Polylepis incana")
-results <- matching_threatenedperu(species_list, target_df = "original")
+results <- matching_threatenedperu(species_list, source = "original")
 }
 
 }

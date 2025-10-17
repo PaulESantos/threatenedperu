@@ -4,12 +4,23 @@
 \alias{direct_match_infra_rank_within_species}
 \title{Direct Match Infraspecific Rank within Species}
 \usage{
-direct_match_infra_rank_within_species(df, target_df = NULL)
+direct_match_infra_rank_within_species(
+  df,
+  target_df = NULL,
+  source = "original"
+)
 }
 \arguments{
 \item{df}{A tibble containing the species data to be matched.}
 
 \item{target_df}{A tibble representing the threatened species database.}
+
+\item{source}{Character string specifying which database version to use.
+Options are:
+\itemize{
+  \item \code{"original"} (default): Uses the original threatened species database
+  \item \code{"updated"}: Uses the updated database with synonyms
+}}
 }
 \value{
 A tibble with an additional logical column `direct_match_infra_rank` indicating
@@ -25,5 +36,9 @@ This function ensures that the infraspecific category (e.g., VAR., SUBSP., F.)
 matches exactly before attempting fuzzy matching on the infraspecific epithet.
 This prevents inappropriate matches like "var. alba" matching with "subsp. alba"
 which, despite having similar epithets, are taxonomically different entities.
+
+The function automatically uses the correct column name based on use_infraspecies_2:
+- TRUE: Uses 'tag' column (original DS 043-2006-AG database)
+- FALSE: Uses 'tag_acc' column (updated nomenclature database)
 }
 \keyword{internal}
