@@ -356,9 +356,6 @@ fuzzy_match_infraspecies_within_species_helper <- function(df,
           tidyr::drop_na(tag_acc, infraspecies)      # Only complete infraspecific taxa
       )
     }
-
-
-
   }
 
   # Memoize for performance

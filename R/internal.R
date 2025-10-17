@@ -303,8 +303,14 @@ map_dfr_progress <- function(.x, .f, ..., .id = NULL) {
   .f <- purrr::as_mapper(.f, ...)
   pb <- progress::progress_bar$new(total = length(.x),
                                    force = TRUE,
-                                   format = paste(paste0(eval(...), collapse = ' '), ": ",
-                                                  function_name, "[:bar] :percent", collapse = ''))
+                                   format = paste0(function_name, " [:bar] :percent")
+                                   #format = paste(paste0(eval(...),
+                                   #                     collapse = ' '),
+                                   #                ": ",
+                                   #                function_name,
+                                   #                "[:bar] :percent",
+                                   #                collapse = '')
+                                   )
 
   f <- function(...) {
     pb$tick()
