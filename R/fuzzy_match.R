@@ -386,6 +386,8 @@ fuzzy_match_infraspecies_within_species_helper <- function(df,
   # IMPORTANT: Only fuzzy match epithets within the SAME rank category
   # This ensures "SUBSP. ovatoformes" only matches with "SUBSP. X" entries
   # ==========================================================================
+  # Determinar qué columna de tag usar
+  tag_col_to_remove <- if(use_infraspecies_2) "tag" else "tag_acc"
 
   matched <-
     df |>
@@ -395,7 +397,8 @@ fuzzy_match_infraspecies_within_species_helper <- function(df,
                                     distance_col = 'fuzzy_infraspecies_dist') |>
     # Assign matched values
     dplyr::mutate(Matched.Infraspecies = infraspecies) |>
-    dplyr::select(-c('species', 'genus', 'infraspecies', 'tag')) |>
+    dplyr::select(-c('species', 'genus', 'infraspecies'),
+                  dplyr::all_of(tag_col_to_remove)) |>
     dplyr::group_by(Orig.Genus, Orig.Species, Orig.Infra.Rank, Orig.Infraspecies) |>
     dplyr::filter(fuzzy_infraspecies_dist == min(fuzzy_infraspecies_dist)) |>
     dplyr::group_modify(

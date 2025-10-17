@@ -104,11 +104,13 @@ is_ds043_2006_ag <- function(splist,
   # SECTION 2: Search in Original Database (DS 043-2006-AG 2006)
   # ========================================================================
 
-  res_original <- matching_threatenedperu(
+  res_original <- suppressMessages(
+    suppressWarnings(
+    matching_threatenedperu(
     splist = splist,
     source = "original"
   )
-
+))
 
   # ========================================================================
   # SECTION 3: Search in Updated Database (Current Nomenclature)
