@@ -65,6 +65,14 @@ matching_threatenedperu <- function(splist, source = "original") {
     )
   })
 
+  target_prepared <- target_prepared |>
+     dplyr::mutate(
+     dplyr::across(
+       dplyr::where(is.character),
+       ~stringr::str_squish(.)  # Elimina espacios extra internos y externos
+     )
+   )
+
   # Validate database structure
   if (use_infraspecies_2) {
     required_cols <- c("genus", "species", "tag", "infraspecies",
