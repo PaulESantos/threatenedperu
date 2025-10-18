@@ -8,7 +8,7 @@ test_that("Original database has required columns", {
 
   required_cols <- c(
     "scientific_name", "author", "family", "tag",
-    "form", "accepted_name", "accepted_name_author",
+    "infraspecies_2", "accepted_name", "accepted_name_author",
     "accepted_family", "taxonomic_status",
     "threat_category", "genus", "species",
     "infraspecies"
