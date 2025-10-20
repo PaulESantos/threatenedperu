@@ -108,8 +108,62 @@ matching_threatenedperu <- function(splist, source = "original") {
     df <- splist_class
   }
 
+
   # ==========================================================================
-  # SECTION 2B: Initialize ALL Matching Columns
+  # SECTION 2B: Handle Empty Dataframe BEFORE Adding Columns
+  # ==========================================================================
+
+  # CRITICAL: Check if df is empty BEFORE attempting to add columns
+  if (nrow(df) == 0) {
+    message(
+      "All input names were filtered out (genus-level or invalid names).\n",
+      "Returning empty result with 'Not threatened' status."
+    )
+
+    # Create empty result matching the expected structure
+    empty_result <- splist_class |>
+      dplyr::select(sorter, Orig.Name, Orig.Genus, Orig.Species,
+                    Orig.Infraspecies, Orig.Infraspecies_2,
+                    Rank, Orig.Infra.Rank, Orig.Infra.Rank_2, Author) |>
+      dplyr::mutate(
+        Matched.Name = "---",
+        Matched.Genus = NA_character_,
+        Matched.Species = NA_character_,
+        Matched.Infra.Rank = NA_character_,
+        Matched.Infraspecies = NA_character_,
+        Matched.Infra.Rank_2 = NA_character_,
+        Matched.Infraspecies_2 = NA_character_,
+        Matched.Rank = NA_integer_,
+        Matched.Rank.Calculated = NA_integer_,
+        valid_rank = FALSE,
+        matched = FALSE,
+        threat_category = NA_character_,
+        accepted_name_author = "---",
+        Threat.Status = "Not threatened",
+        Comp.Rank = FALSE,
+        Match.Level = "No match"
+      ) |>
+      dplyr::relocate(
+        sorter, Orig.Name, Matched.Name, Threat.Status,
+        Author, accepted_name_author, Matched.Rank,
+        Comp.Rank, Match.Level
+      )
+
+    # Add metadata
+    attr(empty_result, "use_infraspecies_2") <- use_infraspecies_2
+    attr(empty_result, "target_database") <- source
+    attr(empty_result, "matching_date") <- Sys.Date()
+    attr(empty_result, "n_input") <- nrow(splist_class)
+    attr(empty_result, "n_matched") <- 0
+    attr(empty_result, "match_rate") <- 0
+
+    return(empty_result)
+  }
+
+
+
+  # ==========================================================================
+  # SECTION 2C: Initialize ALL Matching Columns (only if df has rows)
   # ==========================================================================
 
   all_matching_cols <- c(
@@ -123,7 +177,7 @@ matching_threatenedperu <- function(splist, source = "original") {
 
   for (col in all_matching_cols) {
     if (!col %in% colnames(df)) {
-      df[[col]] <- NA_character_
+      df[[col]] <- NA_character_  # ← Ahora seguro, df tiene filas
     }
   }
 
@@ -146,6 +200,8 @@ matching_threatenedperu <- function(splist, source = "original") {
       "' which supports the updated names of species listed in DS 043-2006-AG."
     )
   }
+
+
 
   # ==========================================================================
   # SECTION 2C: Validate Rank 4 with Database Compatibility

@@ -62,9 +62,9 @@ test_that("Invalid source parameter throws error", {
 })
 
 test_that("Non-character input throws error", {
-  expect_error(
+  expect_warning(
     is_threatened_peru(123),
-    "splist must be a character vector"
+    "Input was numeric, converted to character"
   )
 
   expect_error(
