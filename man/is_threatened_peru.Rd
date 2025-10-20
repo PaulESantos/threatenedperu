@@ -2,7 +2,7 @@
 % Please edit documentation in R/api_match.R
 \name{is_threatened_peru}
 \alias{is_threatened_peru}
-\title{Check if species are threatened listed in DS 043-2006-AG  Peru}
+\title{Check if species are threatened listed in DS 043-2006-AG Peru}
 \usage{
 is_threatened_peru(splist, source = "original", return_details = FALSE)
 }
@@ -36,7 +36,7 @@ variations in species names.
 }
 \examples{
 \donttest{
-#' # Simple usage - returns threat status vector
+# Simple usage - returns threat status vector
 species_list <- c("Cattleya maxima", "Polylepis incana", "Fake species")
 threat_status <- is_threatened_peru(species_list)
 threat_status
@@ -45,5 +45,13 @@ threat_status
 detailed_results <- is_threatened_peru(species_list,
                                        return_details = TRUE)
 detailed_results
+
+# Handle NA values
+species_with_na <- c("Cattleya maxima", NA, "Polylepis incana")
+status <- is_threatened_peru(species_with_na)
+status
+
+# Empty input
+empty_result <- is_threatened_peru(character(0))
 }
 }

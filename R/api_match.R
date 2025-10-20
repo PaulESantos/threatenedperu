@@ -338,7 +338,7 @@ comparison_table_ds043 <- function(splist) {
   return(comparison)
 }
 
-#' Check if species are threatened listed in DS 043-2006-AG  Peru
+#' Check if species are threatened listed in DS 043-2006-AG Peru
 #'
 #' @description
 #' This function checks if a list of species names are threatened according to the
@@ -368,7 +368,7 @@ comparison_table_ds043 <- function(splist) {
 #'
 #' @examples
 #' \donttest{
-#'#' # Simple usage - returns threat status vector
+#' # Simple usage - returns threat status vector
 #' species_list <- c("Cattleya maxima", "Polylepis incana", "Fake species")
 #' threat_status <- is_threatened_peru(species_list)
 #' threat_status
@@ -377,55 +377,191 @@ comparison_table_ds043 <- function(splist) {
 #' detailed_results <- is_threatened_peru(species_list,
 #'                                        return_details = TRUE)
 #' detailed_results
+#'
+#' # Handle NA values
+#' species_with_na <- c("Cattleya maxima", NA, "Polylepis incana")
+#' status <- is_threatened_peru(species_with_na)
+#' status
+#'
+#' # Empty input
+#' empty_result <- is_threatened_peru(character(0))
 #' }
 is_threatened_peru <- function(splist, source = "original", return_details = FALSE) {
 
-  # Input validation
+  # ========================================================================
+  # SECTION 1: Input Type Validation and Coercion
+  # ========================================================================
+
+  # Convert to character if possible, otherwise error
   if (!is.character(splist)) {
-    stop("splist must be a character vector")
+    # Special handling for NA vectors (which are logical by default)
+    if (is.logical(splist) && all(is.na(splist))) {
+      # Coerce all-NA logical vector to character
+      splist <- as.character(splist)
+      warning(
+        "Input was logical NA vector, converted to character NA",
+        call. = FALSE
+      )
+    } else if (is.atomic(splist) && !is.null(splist)) {
+      # Try to coerce other atomic types (numeric, factor, etc.)
+      splist_original <- splist
+      splist <- as.character(splist)
+      warning(
+        sprintf(
+          "Input was %s, converted to character. Please provide character vector.",
+          class(splist_original)[1]
+        ),
+        call. = FALSE
+      )
+    } else {
+      # Cannot coerce, stop with error
+      stop(
+        "splist must be a character vector or coercible to character.\n",
+        "  Provided type: ", class(splist)[1],
+        call. = FALSE
+      )
+    }
   }
+
+  # ========================================================================
+  # SECTION 2: Empty Input Handling
+  # ========================================================================
 
   if (length(splist) == 0) {
-    warning("Empty species list provided")
-    return(character(0))
+    warning("Empty species list provided", call. = FALSE)
+
+    if (return_details) {
+      # Return empty tibble with proper structure
+      return(tibble::tibble(
+        Original.Index = integer(0),
+        Orig.Name = character(0),
+        Matched.Name = character(0),
+        Threat.Status = character(0)
+      ))
+    } else {
+      return(character(0))
+    }
   }
 
-  # Remove empty strings and NA values
-  splist_clean <- splist[!is.na(splist) & nchar(trimws(splist)) > 0]
+  # ========================================================================
+  # SECTION 3: Identify Valid vs Invalid Entries
+  # ========================================================================
+
+  # Valid entries: not NA and not empty/whitespace
+  valid_mask <- !is.na(splist) & nchar(trimws(splist)) > 0
+  valid_indices <- which(valid_mask)
+  invalid_indices <- which(!valid_mask)
+
+  splist_clean <- splist[valid_mask]
+
+  # ========================================================================
+  # SECTION 4: Handle All-Invalid Input
+  # ========================================================================
 
   if (length(splist_clean) == 0) {
-    warning("All species names are empty or NA")
-    return(rep("Not threatened", length(splist)))
+    warning(
+      "All species names are empty or NA. Returning 'Not threatened' for all.",
+      call. = FALSE
+    )
+
+    if (return_details) {
+      # Create detailed output for all-NA input
+      return(tibble::tibble(
+        Original.Index = seq_along(splist),
+        Orig.Name = splist,  # Will be all NA
+        Matched.Name = rep("---", length(splist)),
+        Threat.Status = rep("Not threatened", length(splist)),
+        Rank = rep(NA_integer_, length(splist)),
+        Matched.Rank = rep(NA_integer_, length(splist)),
+        matched = rep(FALSE, length(splist))
+      ))
+    } else {
+      return(rep("Not threatened", length(splist)))
+    }
   }
 
-  if (length(splist_clean) != length(splist)) {
-    message("Some species names were empty or NA and were treated as 'Not threatened'")
+  # ========================================================================
+  # SECTION 5: Report Mixed Valid/Invalid Input
+  # ========================================================================
+
+  if (length(invalid_indices) > 0) {
+    n_invalid <- length(invalid_indices)
+    message(
+      sprintf(
+        "%d species name%s %s empty or NA and will be treated as 'Not threatened'",
+        n_invalid,
+        ifelse(n_invalid > 1, "s", ""),
+        ifelse(n_invalid > 1, "were", "was")
+      )
+    )
   }
 
-  # Perform detailed matching
+  # ========================================================================
+  # SECTION 6: Perform Matching on Valid Entries
+  # ========================================================================
+
   match_df <- matching_threatenedperu(splist_clean, source = source)
 
-
-  # Create result vector for all original inputs
-  result_vector <- rep("Not threatened", length(splist))
-
-  # Fill in results for valid species names
-  valid_indices <- which(!is.na(splist) & nchar(trimws(splist)) > 0)
-
-  result_vector[valid_indices] <- match_df$Threat.Status[valid_indices]
-  # Asignar algo en los índices inválidos (ejemplo: "NA")
-  invalid_indices <- setdiff(seq_along(splist), valid_indices)
-  result_vector[invalid_indices] <- "Not threatened"
+  # ========================================================================
+  # SECTION 7: Construct Output
+  # ========================================================================
 
   if (return_details) {
-    # Add back the original indices and return full results
-    detailed_results <- match_df |>
-      dplyr::mutate(Original.Index = valid_indices) |>
+    # -----------------------------------------------------------------------
+    # Detailed Output: Reconstruct full dataframe with all original indices
+    # -----------------------------------------------------------------------
+
+    # Create base structure for ALL input positions
+    full_result <- tibble::tibble(
+      Original.Index = seq_along(splist),
+      Orig.Name = splist
+    )
+
+    # Add detailed results for valid entries
+    detailed_valid <- match_df |>
+      dplyr::mutate(Original.Index = valid_indices)
+
+    # Join and fill missing columns
+    detailed_result <- full_result |>
+      dplyr::left_join(
+        detailed_valid,
+        by = "Original.Index",
+        suffix = c("", ".y")
+      ) |>
+      # Remove duplicate Orig.Name column from join
+      dplyr::select(-dplyr::ends_with(".y")) |>
+      # Fill NA values for invalid entries
+      dplyr::mutate(
+        Matched.Name = dplyr::if_else(
+          is.na(Matched.Name),
+          "---",
+          Matched.Name
+        ),
+        Threat.Status = dplyr::if_else(
+          is.na(Threat.Status),
+          "Not threatened",
+          Threat.Status
+        ),
+        matched = tidyr::replace_na(matched, FALSE)
+      ) |>
       dplyr::relocate(Original.Index, .before = 1)
 
-    return(detailed_results)
+    return(detailed_result)
+
   } else {
-    # Return simple vector
+    # -----------------------------------------------------------------------
+    # Simple Output: Character vector with threat status
+    # -----------------------------------------------------------------------
+
+    # Initialize with "Not threatened" for all
+    result_vector <- rep("Not threatened", length(splist))
+
+    # Fill in actual results for valid entries
+    result_vector[valid_indices] <- match_df$Threat.Status
+
+    # Ensure invalid entries remain "Not threatened"
+    result_vector[invalid_indices] <- "Not threatened"
+
     return(result_vector)
   }
 }

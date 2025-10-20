@@ -15,7 +15,7 @@ test_that("NA values are handled correctly", {
 
   expect_message(
     is_threatened_peru(input),
-    "Some species names were empty or NA"
+    "2 species names were empty or NA and will be treated as 'Not threatened'"
   )
 
   result <- suppressMessages(is_threatened_peru(input))
@@ -44,17 +44,15 @@ test_that("Very long species lists are processed", {
   expect_true(all(result != "Not threatened"))
 })
 
-# test_that("Genus-only names generate informative message", {
-#   input <- "Microchilus"
-#
-#   expect_message(
-#     is_threatened_peru(input),
-#     "should only include binomial names"
-#   )
-#
-#   result <- suppressMessages(is_threatened_peru(input))
-#   expect_equal(result, "Not threatened")
-# })
+test_that("Genus-only names generate informative message", {
+ input <- "Microchilus"
+ expect_message(
+   is_threatened_peru(input),
+   "should only include binomial names"
+ )
+ result <- suppressMessages(is_threatened_peru(input))
+ expect_equal(result, "Not threatened")
+})
 
 test_that("Invalid source parameter throws error", {
   expect_error(

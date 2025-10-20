@@ -1,7 +1,7 @@
 
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
-# threatenedperu
+# threatenedperu <a href='https://github.com/PaulESantos/threatenedperu'><img src='man/figures/logo.png' align="right" height="200" width="200" /></a>
 
 <!-- badges: start -->
 
