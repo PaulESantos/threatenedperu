@@ -29,6 +29,12 @@ successful matches while maintaining accuracy.
 \details{
 The matching process follows a hierarchical pipeline with robust handling of
 infraspecific ranks at two levels (when supported by the database).
+
+**Ambiguous Matches:**
+When multiple candidates have identical match scores (string distances), the
+algorithm automatically selects the first match and issues a warning. To review
+ambiguous matches for quality control, use \code{\link{get_ambiguous_matches}}
+on the result object.
 }
 \examples{
 \dontrun{
@@ -39,4 +45,5 @@ results <- matching_threatenedperu(species_list, source = "original")
 }
 \seealso{
 \code{\link{is_threatened_peru}} for a simplified interface
+\code{\link{get_ambiguous_matches}} to retrieve ambiguous match details
 }

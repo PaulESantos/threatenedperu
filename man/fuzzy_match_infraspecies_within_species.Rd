@@ -10,26 +10,7 @@ fuzzy_match_infraspecies_within_species(
   source = "original"
 )
 }
-\arguments{
-\item{df}{A tibble containing the species data to be matched. Must have
-already passed through direct_match_infra_rank validation.}
-
-\item{target_df}{A tibble representing the threatened species database.}
-}
-\value{
-A tibble with two additional columns:
-- `fuzzy_match_infraspecies`: Logical indicating whether the infraspecific
-  epithet was successfully fuzzy matched (`TRUE`) or not (`FALSE`)
-- `fuzzy_infraspecies_dist`: Numeric indicating the string distance of the match
-}
 \description{
-Performs fuzzy matching of infraspecific epithets within an already matched
-species where the infraspecific rank category (VAR., SUBSP., F., etc.) has
-already been validated via direct_match_infra_rank.
-}
-\details{
-This function assumes that infraspecific rank categories have already been
-validated. It only performs fuzzy matching on the infraspecific epithet
-(e.g., "ovatoformes" vs "ovatoformis") within the same rank category.
+Fuzzy Match Infraspecific Epithet within Species
 }
 \keyword{internal}

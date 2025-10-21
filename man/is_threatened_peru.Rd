@@ -36,22 +36,48 @@ variations in species names.
 }
 \examples{
 \donttest{
-# Simple usage - returns threat status vector
+# Example 1: Basic usage with valid species names
 species_list <- c("Cattleya maxima", "Polylepis incana", "Fake species")
-threat_status <- is_threatened_peru(species_list)
-threat_status
 
-# Detailed usage - returns full tibble
-detailed_results <- is_threatened_peru(species_list,
-                                       return_details = TRUE)
-detailed_results
+# Simple status check
+threat_status <- tryCatch(
+  is_threatened_peru(species_list),
+  error = function(e) {
+    message("Error in matching: ", e$message)
+    rep("Error", length(species_list))
+  }
+)
+print(threat_status)
 
-# Handle NA values
+# Example 2: Detailed results
+detailed_results <- tryCatch(
+  is_threatened_peru(species_list, return_details = TRUE),
+  error = function(e) {
+    message("Error in detailed matching: ", e$message)
+    NULL
+  }
+)
+if (!is.null(detailed_results)) {
+  print(detailed_results)
+}
+
+# Example 3: Handling NA values gracefully
 species_with_na <- c("Cattleya maxima", NA, "Polylepis incana")
-status <- is_threatened_peru(species_with_na)
-status
+status_with_na <- is_threatened_peru(species_with_na)
+print(status_with_na)
 
-# Empty input
+# Example 4: Empty input handling
 empty_result <- is_threatened_peru(character(0))
+print(empty_result)  # Should return character(0)
+
+# Example 5: Using updated database
+updated_results <- tryCatch(
+  is_threatened_peru(species_list, source = "updated"),
+  error = function(e) {
+    message("Error with updated database: ", e$message)
+    rep("Error", length(species_list))
+  }
+)
+print(updated_results)
 }
 }

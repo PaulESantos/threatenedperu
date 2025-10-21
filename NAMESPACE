@@ -2,6 +2,9 @@
 
 export(check_ds043)
 export(comparison_table_ds043)
+export(get_ambiguous_matches)
+export(get_database_summary)
+export(get_threatened_database)
 export(is_ds043_2006_ag)
 export(is_threatened_peru)
 export(matching_threatenedperu)

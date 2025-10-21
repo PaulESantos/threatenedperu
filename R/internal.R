@@ -297,24 +297,41 @@
 
 
 # ---------------------------------------------------------------
+#' Map with optional progress bar
+#'
+#' @description
+#' Internal wrapper for purrr::map_dfr with optional progress tracking.
+#' Progress bars are only shown in interactive sessions.
+#'
+#' @param .x A list or vector to iterate over
+#' @param .f A function to apply
+#' @param ... Additional arguments passed to .f
+#' @param .id Column name for row identification
+#' @param .progress Logical. Show progress bar? Default is interactive()
+#'
 #' @keywords internal
-map_dfr_progress <- function(.x, .f, ..., .id = NULL) {
+map_dfr_progress <- function(.x, .f, ..., .id = NULL, .progress = interactive()) {
+
   function_name <- stringr::str_remove(toString(substitute(.f)), '_helper')
   .f <- purrr::as_mapper(.f, ...)
-  pb <- progress::progress_bar$new(total = length(.x),
-                                   force = TRUE,
-                                   format = paste0(function_name, " [:bar] :percent")
-                                   #format = paste(paste0(eval(...),
-                                   #                     collapse = ' '),
-                                   #                ": ",
-                                   #                function_name,
-                                   #                "[:bar] :percent",
-                                   #                collapse = '')
-                                   )
 
-  f <- function(...) {
-    pb$tick()
-    .f(...)
+  # Only show progress bar if requested AND in interactive session
+  if (.progress && interactive()) {
+    pb <- progress::progress_bar$new(
+      total = length(.x),
+      force = TRUE,
+      format = paste0(function_name, " [:bar] :percent"),
+      clear = FALSE,  # Don't clear after completion for debugging
+      show_after = 0.5  # Only show if operation takes > 0.5 seconds
+    )
+
+    f <- function(...) {
+      pb$tick()
+      .f(...)
+    }
+  } else {
+    # No progress bar in non-interactive sessions
+    f <- .f
   }
 
   purrr::map_dfr(.x, f, ..., .id = .id)
@@ -433,6 +450,214 @@ get_threatened_data <- function(type = c("original", "updated")) {
 
   get(data_name, envir = ns, inherits = FALSE)
 }
+
+#' Retrieve Ambiguous Match Information
+#'
+#' @description
+#' Extracts information about ambiguous matches (multiple candidates with
+#' tied distances) from matching results. This is useful for quality control
+#' and manual curation of uncertain matches.
+#'
+#' @param match_result A tibble returned by matching functions such as
+#'   \code{\link{matching_threatenedperu}} or internal matching functions.
+#' @param type Character. Type of ambiguous matches to retrieve:
+#'   \itemize{
+#'     \item \code{"genus"} (default): Ambiguous genus-level matches
+#'     \item \code{"species"}: Ambiguous species-level matches
+#'     \item \code{"infraspecies"}: Ambiguous infraspecies-level matches
+#'     \item \code{"all"}: All types of ambiguous matches
+#'   }
+#' @param save_to_file Logical. If TRUE, saves results to a CSV file.
+#'   Default is FALSE (CRAN compliant - no automatic file writing).
+#' @param output_dir Character. Directory to save the file if save_to_file = TRUE.
+#'   Defaults to \code{tempdir()} for safe file operations.
+#'
+#' @return
+#' A tibble with ambiguous match details, or NULL if no ambiguous matches exist.
+#' Columns depend on the match type but typically include original names,
+#' matched names, and distance metrics.
+#'
+#' @details
+#' During fuzzy matching, multiple candidates may have identical string distances,
+#' making the choice of match ambiguous. The matching algorithm automatically
+#' selects the first candidate, but this function allows you to:
+#' \itemize{
+#'   \item Review all ambiguous matches for quality control
+#'   \item Export them for manual curation
+#'   \item Make informed decisions about match quality
+#' }
+#'
+#' @section File Output:
+#' When \code{save_to_file = TRUE}, a timestamped CSV file is created:
+#' \itemize{
+#'   \item Filename format: "threatenedperu_ambiguous_[type]_[timestamp].csv"
+#'   \item Location: \code{output_dir} (defaults to tempdir())
+#'   \item Contains all ambiguous matches with metadata
+#' }
+#'
+#' @export
+#' @examples
+#' \donttest{
+#' # Basic usage after matching
+#' species_list <- c("Catleya maxima", "Polylepis incana")  # Note typo in Cattleya
+#' result <- is_threatened_peru(species_list, return_details = TRUE)
+#'
+#' # Check for ambiguous genus matches
+#' ambig_genera <- get_ambiguous_matches(result, type = "genus")
+#' if (!is.null(ambig_genera)) {
+#'   print(ambig_genera)
+#' }
+#'
+#' # Get all types of ambiguous matches
+#' all_ambig <- get_ambiguous_matches(result, type = "all")
+#'
+#' # Save to file for manual review (optional)
+#' ambig_genera <- get_ambiguous_matches(
+#'   result,
+#'   type = "genus",
+#'   save_to_file = TRUE,
+#'   output_dir = tempdir()
+#' )
+#'
+#' # Advanced: Save to specific directory (user's choice)
+#' \dontrun{
+#' my_dir <- "~/my_analysis/ambiguous_matches"
+#' dir.create(my_dir, showWarnings = FALSE, recursive = TRUE)
+#' ambig <- get_ambiguous_matches(
+#'   result,
+#'   type = "genus",
+#'   save_to_file = TRUE,
+#'   output_dir = my_dir
+#' )
+#' }
+#' }
+get_ambiguous_matches <- function(match_result,
+                                  type = c("genus", "species", "infraspecies", "all"),
+                                  save_to_file = FALSE,
+                                  output_dir = tempdir()) {
+
+  type <- match.arg(type)
+
+  # ========================================================================
+  # SECTION 1: Validate Input
+  # ========================================================================
+
+  if (!inherits(match_result, "data.frame")) {
+    stop(
+      "match_result must be a data frame or tibble returned by a matching function.",
+      call. = FALSE
+    )
+  }
+
+  # ========================================================================
+  # SECTION 2: Extract Ambiguous Match Attributes
+  # ========================================================================
+
+  # Collect available ambiguous match types
+  ambiguous_data <- list()
+
+  # Check for genus-level ambiguous matches
+  if (type %in% c("genus", "all") && !is.null(attr(match_result, "ambiguous_genera"))) {
+    ambiguous_data$genus <- attr(match_result, "ambiguous_genera") |>
+      dplyr::mutate(Match_Type = "Genus", .before = 1)
+  }
+
+  # Check for species-level ambiguous matches
+  if (type %in% c("species", "all") && !is.null(attr(match_result, "ambiguous_species"))) {
+    ambiguous_data$species <- attr(match_result, "ambiguous_species") |>
+      dplyr::mutate(Match_Type = "Species", .before = 1)
+  }
+
+  # Check for infraspecies-level ambiguous matches
+  if (type %in% c("infraspecies", "all") && !is.null(attr(match_result, "ambiguous_infraspecies"))) {
+    ambiguous_data$infraspecies <- attr(match_result, "ambiguous_infraspecies") |>
+      dplyr::mutate(Match_Type = "Infraspecies", .before = 1)
+  }
+
+  # ========================================================================
+  # SECTION 3: Handle No Ambiguous Matches
+  # ========================================================================
+
+  if (length(ambiguous_data) == 0) {
+    message(
+      "No ambiguous ", type, " matches found in the result.\n",
+      "This is good news - all matches were unambiguous!"
+    )
+    return(invisible(NULL))
+  }
+
+  # ========================================================================
+  # SECTION 4: Combine Results
+  # ========================================================================
+
+  if (type == "all") {
+    result <- dplyr::bind_rows(ambiguous_data)
+  } else {
+    result <- ambiguous_data[[type]]
+  }
+
+  # Add summary information
+  n_matches <- nrow(result)
+  n_original <- result |>
+    dplyr::distinct(dplyr::across(dplyr::starts_with("Orig."))) |>
+    nrow()
+
+  message(
+    "Found ", n_matches, " ambiguous match(es) for ",
+    n_original, " original name(s).\n"
+  )
+
+  # ========================================================================
+  # SECTION 5: Optional File Export
+  # ========================================================================
+
+  if (save_to_file) {
+    # Validate output directory
+    if (!dir.exists(output_dir)) {
+      tryCatch({
+        dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+      }, error = function(e) {
+        stop(
+          "Cannot create output directory: ", output_dir, "\n",
+          "Error: ", e$message,
+          call. = FALSE
+        )
+      })
+    }
+
+    # Create timestamped filename
+    timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+    filename <- paste0(
+      "threatenedperu_ambiguous_",
+      type,
+      "_",
+      timestamp,
+      ".csv"
+    )
+    filepath <- file.path(output_dir, filename)
+
+    # Write file
+    tryCatch({
+      readr::write_csv(result, filepath)
+      message("Ambiguous matches saved to: ", filepath)
+    }, error = function(e) {
+      warning(
+        "Failed to write file: ", filepath, "\n",
+        "Error: ", e$message,
+        call. = FALSE,
+        immediate. = TRUE
+      )
+    })
+  }
+
+  # ========================================================================
+  # SECTION 6: Return Results
+  # ========================================================================
+
+  return(result)
+}
+
+
 
 # ---------------------------------------------------------------
 # ---------------------------------------------------------------

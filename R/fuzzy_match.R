@@ -1,238 +1,329 @@
 #' Fuzzy Match Genus Name
 #'
 #' @description
-#' This function performs a fuzzy match of genus names against the threatened species database using fuzzyjoin::stringdist() to account for slight variations in spelling.
+#' This function performs a fuzzy match of genus names against the threatened
+#' species database using fuzzyjoin::stringdist() to account for slight
+#' variations in spelling.
 #'
 #' @param df A tibble containing the genus names to be matched.
-#' @param target_df A tibble representing the threatened species database containing the reference list of threatened species.
+#' @param target_df A tibble representing the threatened species database
+#'   containing the reference list of threatened species.
 #'
 #' @return
 #' A tibble with two additional columns:
-#' - fuzzy_match_genus: A logical column indicating whether the genus was successfully matched (`TRUE`) or not (`FALSE`).
+#' - fuzzy_match_genus: A logical column indicating whether the genus was
+#'   successfully matched (`TRUE`) or not (`FALSE`).
 #' - fuzzy_genus_dist: A numeric column representing the distance for each match.
 #'
+#' @details
+#' If multiple genera match with the same string distance (ambiguous matches),
+#' a warning is issued and the first match is automatically selected. To
+#' examine ambiguous matches in detail, use \code{\link{get_ambiguous_matches}}
+#' on the result object.
+#'
+#' @seealso \code{\link{get_ambiguous_matches}} to retrieve ambiguous match details
+#'
 #' @keywords internal
-fuzzy_match_genus <- function(df, target_df = NULL){
+fuzzy_match_genus <- function(df, target_df = NULL) {
+
+  # ========================================================================
+  # SECTION 1: Input Validation
+  # ========================================================================
+
   assertthat::assert_that(all(c('Orig.Genus',
                                 'Orig.Species',
                                 'Orig.Infraspecies',
                                 'Orig.Infraspecies_2') %in% colnames(df)))
 
-  ## solve issue of empty input tibble, and needed to ensure compatilbility with sequential_matching: because there the columns already exists for the second backbone
-  if(nrow(df) == 0){
-    if(!all(c('fuzzy_match_genus', 'fuzzy_genus_dist') %in% colnames(df))){
+  # Handle empty input tibble
+  if (nrow(df) == 0) {
+    if (!all(c('fuzzy_match_genus', 'fuzzy_genus_dist') %in% colnames(df))) {
       return(tibble::add_column(df,
                                 fuzzy_match_genus = NA,
                                 fuzzy_genus_dist = NA))
-    }
-    else{
+    } else {
       return(df)
     }
   }
-  ## solve issue in second iteration of sequential_matching: necessary to remove fuzzy_species_dist column: otherwise 2 columns are generated 'fuzzy_species_dist...1, fuzzy_species_dist...2'
-  if('fuzzy_genus_dist' %in% colnames(df)){
+
+  # Remove existing fuzzy_genus_dist column if present (for sequential matching)
+  if ('fuzzy_genus_dist' %in% colnames(df)) {
     df <- df |>
       dplyr::mutate(fuzzy_genus_dist = NULL)
-  } ## TODO: can potentially be removed again????
+  }
+
+  # ========================================================================
+  # SECTION 2: Fuzzy Matching
+  # ========================================================================
 
   Threatened.Genera <- target_df |>
     dplyr::distinct(genus)
-  # fuzzy match
+
+  # Perform fuzzy match
   matched_temp <- df |>
     fuzzyjoin::stringdist_left_join(Threatened.Genera,
                                     by = c('Orig.Genus' = 'genus'),
                                     max_dist = 1,
                                     distance_col = 'fuzzy_genus_dist') |>
-    # save matched Genus name to Matched.Genus
     dplyr::mutate(Matched.Genus = genus) |>
     dplyr::select(-c('genus')) |>
     dplyr::group_by(Orig.Genus, Orig.Species) |>
     dplyr::filter(fuzzy_genus_dist == min(fuzzy_genus_dist))
 
+  # ========================================================================
+  # SECTION 3: Handle Ambiguous Matches (CRAN Compliant)
+  # ========================================================================
 
-  ## If there are multiple matches for the same genus: raise warning and advise for manual checking
-  if(matched_temp |>
-     dplyr::filter(dplyr::n() > 1) |>
-     nrow() > 0){
-    message("Multiple fuzzy matches for genera with similar string distance:
-            Please consider curating the ambiguous entries by hand and re-run the pipeline.
-            The ambiguous matched genera were saved to 'threatenedperu_ambiguous_genera.csv' in the current working directory.
-             The algorithm will choose the first genus to continue.")
-    #Do you want save a list of the ambiguous matched genera current working directory in 'threatenedperu_ambiguous_genera.csv'?")
-    ## Save ambiguous genera for manual curation:
-    matched_temp |>
-      dplyr::filter(dplyr::n() > 1) |>
-      dplyr::select(Orig.Genus, Orig.Species, Matched.Genus) |>
-      readr::write_csv(file = 'threatenedperu_ambiguous_genera.csv') ##
-    ## Alternative Idea: prompt the user to insert the correct name. Caution here however because this might cause trouble with unit testing
+  # Detect ambiguous matches (multiple genera with same distance)
+  ambiguous_matches <- matched_temp |>
+    dplyr::filter(dplyr::n() > 1)
+
+  if (nrow(ambiguous_matches) > 0) {
+    # Count unique genera with ambiguous matches
+    n_ambiguous_genera <- ambiguous_matches |>
+      dplyr::distinct(Orig.Genus) |>
+      nrow()
+
+    # Issue informative warning WITHOUT writing files
+    warning(
+      "Found ", n_ambiguous_genera, " genera with multiple fuzzy matches ",
+      "(tied string distances).\n",
+      "  The algorithm will automatically select the first match.\n",
+      "  To examine ambiguous matches, use: ",
+      "get_ambiguous_matches(result, type = 'genus')\n",
+      "  Consider manual curation for critical applications.",
+      call. = FALSE,
+      immediate. = TRUE
+    )
+
+    # Store ambiguous match information as attribute for later retrieval
+    attr(matched_temp, "ambiguous_genera") <- ambiguous_matches |>
+      dplyr::ungroup() |>
+      dplyr::select(Orig.Genus, Orig.Species, Matched.Genus, fuzzy_genus_dist) |>
+      dplyr::arrange(Orig.Genus, Matched.Genus)
   }
 
-  ## continue selecting first genus if more than one match
+  # ========================================================================
+  # SECTION 4: Select First Match for Ambiguous Cases
+  # ========================================================================
+
   matched <- matched_temp |>
     dplyr::group_modify(
       ~ifelse(nrow(.x) == 0,
               return(.x),
-              return(dplyr::slice_head(.x,n = 1)))
-      ## In cases of multiple matches: we choose first match.
-      ## Alternatively could use something more sophisticated here:
-      ## like for instance choosing the one with more support (present
-      ## in more databases)
+              return(dplyr::slice_head(.x, n = 1)))
     ) |>
     dplyr::ungroup()
 
+  # Preserve ambiguous match attribute if it exists
+  if (!is.null(attr(matched_temp, "ambiguous_genera"))) {
+    attr(matched, "ambiguous_genera") <- attr(matched_temp, "ambiguous_genera")
+  }
+
+  # ========================================================================
+  # SECTION 5: Identify Unmatched and Combine Results
+  # ========================================================================
 
   unmatched <- df |>
     fuzzyjoin::stringdist_anti_join(Threatened.Genera,
                                     by = c('Orig.Genus' = 'genus'),
                                     max_dist = 1)
-  #unmatched
+
   assertthat::assert_that(nrow(df) == (nrow(matched) + nrow(unmatched)))
 
-  res <-  dplyr::bind_rows(matched, unmatched,
-                           .id = 'fuzzy_match_genus') |>
-    dplyr::mutate(fuzzy_match_genus = (fuzzy_match_genus == 1)) |>  ## convert to Boolean
+  res <- dplyr::bind_rows(matched, unmatched,
+                          .id = 'fuzzy_match_genus') |>
+    dplyr::mutate(fuzzy_match_genus = (fuzzy_match_genus == 1)) |>
     dplyr::arrange(Orig.Genus, Orig.Species) |>
     dplyr::relocate(c('Orig.Genus',
                       'Orig.Species',
-                      'Orig.Infraspecies')) ## Genus & Species column at the beginning of tibble
-  #res
+                      'Orig.Infraspecies'))
+
+  # Preserve ambiguous match attribute in final result
+  if (!is.null(attr(matched, "ambiguous_genera"))) {
+    attr(res, "ambiguous_genera") <- attr(matched, "ambiguous_genera")
+  }
+
   return(res)
 }
 
-#=====================================================================
+
+# =============================================================================
+# FUZZY MATCH SPECIES WITHIN GENUS
+# =============================================================================
+
 #' Fuzzy Match Species within Genus
 #'
 #' @description
-#' This function attempts to fuzzy match species names within a genus to the threatened species database using fuzzyjoin::stringdist for fuzzy matching.
+#' This function attempts to fuzzy match species names within a genus to the
+#' threatened species database using fuzzyjoin::stringdist for fuzzy matching.
 #'
 #' @param df A tibble containing the species data to be matched.
-#' @param target_df A tibble representing the threatened species database containing the reference list of threatened species.
+#' @param target_df A tibble representing the threatened species database
+#'   containing the reference list of threatened species.
 #'
 #' @return
-#' A tibble with an additional logical column fuzzy_match_species_within_genus, indicating whether the specific epithet was successfully fuzzy matched within the matched genus (`TRUE`) or not (`FALSE`).
+#' A tibble with an additional logical column fuzzy_match_species_within_genus,
+#' indicating whether the specific epithet was successfully fuzzy matched within
+#' the matched genus (`TRUE`) or not (`FALSE`).
+#'
+#' @details
+#' If multiple species match with the same string distance (ambiguous matches),
+#' a warning is issued and the first match is automatically selected. To
+#' examine ambiguous matches in detail, use \code{\link{get_ambiguous_matches}}
+#' on the result object with \code{type = "species"}.
+#'
+#' @seealso \code{\link{get_ambiguous_matches}} to retrieve ambiguous match details
+#'
 #' @keywords internal
-fuzzy_match_species_within_genus_helper <- function(df, target_df){
+fuzzy_match_species_within_genus <- function(df, target_df = NULL) {
 
-  # subset database
+  assertthat::assert_that(all(c('Orig.Genus',
+                                'Orig.Species',
+                                'Orig.Infraspecies',
+                                'Matched.Genus') %in% colnames(df)))
+
+  if (nrow(df) == 0) {
+    if (!all(c('fuzzy_match_species_within_genus',
+               'fuzzy_species_dist') %in% colnames(df))) {
+      return(tibble::add_column(df,
+                                fuzzy_match_species_within_genus = NA,
+                                fuzzy_species_dist = NA))
+    } else {
+      return(df)
+    }
+  }
+
+  if ('fuzzy_species_dist' %in% colnames(df)) {
+    df <- df |>
+      dplyr::mutate(fuzzy_species_dist = NULL)
+  }
+
+  res_list <- df |>
+    dplyr::group_by(Matched.Genus) |>
+    dplyr::group_split()
+
+  res <- map_dfr_progress(res_list,
+                          fuzzy_match_species_within_genus_helper,
+                          target_df) |>
+    dplyr::relocate(c('Orig.Genus',
+                      'Orig.Species',
+                      'Orig.Infraspecies'))
+
+  # Consolidate ambiguous species attributes from all groups
+  all_ambiguous_species <- lapply(seq_along(res_list), function(i) {
+    genus <- unique(res_list[[i]]$Matched.Genus)
+    group_res <- res[res$Matched.Genus == genus, ]
+    attr(group_res, "ambiguous_species")
+  })
+
+  all_ambiguous_species <- dplyr::bind_rows(
+    Filter(Negate(is.null), all_ambiguous_species)
+  )
+
+  if (nrow(all_ambiguous_species) > 0) {
+    attr(res, "ambiguous_species") <- all_ambiguous_species
+  }
+
+  return(res)
+}
+
+
+#' Fuzzy Match Species within Genus - Helper
+#' @keywords internal
+fuzzy_match_species_within_genus_helper <- function(df, target_df) {
+
   genus <- df |>
     dplyr::distinct(Matched.Genus) |>
     unlist()
 
   database_subset <- memoised_get_threatened_genus(genus, target_df)
 
-  # fuzzy match
-  matched <-
-    df |>
+  matched <- df |>
     fuzzyjoin::stringdist_left_join(database_subset,
                                     by = c('Orig.Species' = 'species'),
                                     distance_col = 'fuzzy_species_dist') |>
     dplyr::mutate(Matched.Species = species) |>
     dplyr::select(-c('species', 'genus')) |>
     dplyr::group_by(Orig.Genus, Orig.Species) |>
-    dplyr::filter(fuzzy_species_dist == min(fuzzy_species_dist)) |>
+    dplyr::filter(fuzzy_species_dist == min(fuzzy_species_dist))
+
+  # Handle ambiguous species matches (CRAN compliant)
+  ambiguous_matches <- matched |>
+    dplyr::filter(dplyr::n() > 1)
+
+  if (nrow(ambiguous_matches) > 0) {
+    n_ambiguous_species <- ambiguous_matches |>
+      dplyr::distinct(Orig.Genus, Orig.Species) |>
+      nrow()
+
+    warning(
+      "Found ", n_ambiguous_species, " species with multiple fuzzy matches ",
+      "within genus '", genus, "' (tied string distances).\n",
+      "  The algorithm will automatically select the first match.\n",
+      "  To examine ambiguous matches, use: ",
+      "get_ambiguous_matches(result, type = 'species')\n",
+      "  Consider manual curation for critical applications.",
+      call. = FALSE,
+      immediate. = TRUE
+    )
+
+    attr(matched, "ambiguous_species") <- ambiguous_matches |>
+      dplyr::ungroup() |>
+      dplyr::select(Orig.Genus, Orig.Species, Matched.Species,
+                    fuzzy_species_dist) |>
+      dplyr::arrange(Orig.Genus, Orig.Species, Matched.Species)
+  }
+
+  matched_final <- matched |>
     dplyr::group_modify(
-      ~ifelse(nrow(.x) == 0, return(.x),
-              return(dplyr::slice_head(.x,n=1))) ## In cases of multiple matches: we choose first match. Alternatively could use something more sophisticated here: like for instance choosing the one with more support (present in more databases)
+      ~ifelse(nrow(.x) == 0,
+              return(.x),
+              return(dplyr::slice_head(.x, n = 1)))
     ) |>
     dplyr::ungroup()
 
-  unmatched <-
-    fuzzyjoin::stringdist_anti_join(df,
-                                    database_subset,
-                                    by = c('Orig.Species' = 'species'))
-
-
-  assertthat::assert_that(nrow(df) == (nrow(matched) + nrow(unmatched)))
-
-  # combine matched and unmatched and add Boolean indicator: TRUE = matched, FALSE = unmatched
-  combined <-  dplyr::bind_rows(matched, unmatched,
-                                .id = 'fuzzy_match_species_within_genus') |>
-    dplyr::mutate(fuzzy_match_species_within_genus = (fuzzy_match_species_within_genus == 1)) |>  ## convert to Boolean
-    dplyr::relocate(c('Orig.Genus',
-                      'Orig.Species',
-                      'Orig.Infraspecies')) ## Genus & Species column at the beginning of tibble
-
-  return(combined)
-}
-
-fuzzy_match_species_within_genus <- function(df, target_df = NULL){
-  assertthat::assert_that(all(c('Orig.Genus',
-                                'Orig.Species',
-                                'Orig.Infraspecies',
-                                'Matched.Genus') %in% colnames(df)))
-
-  ## solve issue of empty input tibble and needed to ensure compatibility with sequential_matching: because there the columns already exists for the second backbone
-  if(nrow(df) == 0){
-    if(!all(c('fuzzy_match_species_within_genus',
-              'fuzzy_species_dist') %in% colnames(df))){
-      return(tibble::add_column(df,
-                                fuzzy_match_species_within_genus = NA,
-                                fuzzy_species_dist = NA))
-    }
-    else{
-      return(df)
-    }
+  if (!is.null(attr(matched, "ambiguous_species"))) {
+    attr(matched_final, "ambiguous_species") <- attr(matched, "ambiguous_species")
   }
 
-  ## solve issue in second iteration of sequential_matching: necessary to remove fuzzy_species_dist column: otherwise 2 columns are generated 'fuzzy_species_dist...1, fuzzy_species_dist...2'
-  if('fuzzy_species_dist' %in% colnames(df)){
-    df <- df |>
-      dplyr::mutate(fuzzy_species_dist = NULL)
-  }
+  unmatched <- fuzzyjoin::stringdist_anti_join(df,
+                                               database_subset,
+                                               by = c('Orig.Species' = 'species'))
 
-  res <- df |>
-    dplyr::group_by(Matched.Genus) |>
-    dplyr::group_split() |>  ## TODO: change to dplyr::group_map to be able to omit dplyr::group_split() stage
-    map_dfr_progress(fuzzy_match_species_within_genus_helper,
-                     target_df) |>
+  assertthat::assert_that(nrow(df) == (nrow(matched_final) + nrow(unmatched)))
+
+  combined <- dplyr::bind_rows(matched_final, unmatched,
+                               .id = 'fuzzy_match_species_within_genus') |>
+    dplyr::mutate(fuzzy_match_species_within_genus =
+                    (fuzzy_match_species_within_genus == 1)) |>
     dplyr::relocate(c('Orig.Genus',
                       'Orig.Species',
                       'Orig.Infraspecies'))
 
-  return(res)
+  if (!is.null(attr(matched_final, "ambiguous_species"))) {
+    attr(combined, "ambiguous_species") <- attr(matched_final, "ambiguous_species")
+  }
+
+  return(combined)
 }
 
-#=====================================================================
+
+# =============================================================================
+# FUZZY MATCH INFRASPECIES WITHIN SPECIES
+# =============================================================================
+
 #' Fuzzy Match Infraspecific Epithet within Species
-#'
-#' @description
-#' Performs fuzzy matching of infraspecific epithets within an already matched
-#' species where the infraspecific rank category (VAR., SUBSP., F., etc.) has
-#' already been validated via direct_match_infra_rank.
-#'
-#' @param df A tibble containing the species data to be matched. Must have
-#'   already passed through direct_match_infra_rank validation.
-#' @param target_df A tibble representing the threatened species database.
-#'
-#' @return
-#' A tibble with two additional columns:
-#' - `fuzzy_match_infraspecies`: Logical indicating whether the infraspecific
-#'   epithet was successfully fuzzy matched (`TRUE`) or not (`FALSE`)
-#' - `fuzzy_infraspecies_dist`: Numeric indicating the string distance of the match
-#'
-#' @details
-#' This function assumes that infraspecific rank categories have already been
-#' validated. It only performs fuzzy matching on the infraspecific epithet
-#' (e.g., "ovatoformes" vs "ovatoformis") within the same rank category.
-#'
 #' @keywords internal
 fuzzy_match_infraspecies_within_species <- function(df,
                                                     target_df = NULL,
                                                     source = "original") {
-  # Determinar capacidad de la BD
+
   use_infraspecies_2 <- (source == "original")
-  # ==========================================================================
-  # SECTION 1: Validate Required Columns
-  # ==========================================================================
 
   required_cols <- c(
-    'Orig.Genus',
-    'Orig.Species',
-    'Orig.Infra.Rank',
-    'Orig.Infraspecies',
-    'Orig.Infraspecies_2',
-    'Matched.Genus',
-    'Matched.Species'
+    'Orig.Genus', 'Orig.Species', 'Orig.Infra.Rank', 'Orig.Infraspecies',
+    'Orig.Infraspecies_2', 'Matched.Genus', 'Matched.Species'
   )
 
   assertthat::assert_that(
@@ -242,10 +333,6 @@ fuzzy_match_infraspecies_within_species <- function(df,
       paste(setdiff(required_cols, colnames(df)), collapse = ", ")
     )
   )
-
-  # ==========================================================================
-  # SECTION 2: Handle Empty Input
-  # ==========================================================================
 
   if (nrow(df) == 0) {
     if (!all(c('fuzzy_match_infraspecies', 'fuzzy_infraspecies_dist') %in% colnames(df))) {
@@ -261,115 +348,87 @@ fuzzy_match_infraspecies_within_species <- function(df,
     }
   }
 
-  # ==========================================================================
-  # SECTION 3: Remove Existing Distance Column (Sequential Matching)
-  # ==========================================================================
-
   if ('fuzzy_infraspecies_dist' %in% colnames(df)) {
     df <- df |>
       dplyr::mutate(fuzzy_infraspecies_dist = NULL)
   }
 
-  # ==========================================================================
-  # SECTION 4: Process Each Matched Species Separately
-  # ==========================================================================
-
-  res <- df |>
+  res_list <- df |>
     dplyr::group_by(Matched.Species) |>
-    dplyr::group_split() |>
-    map_dfr_progress(
-      fuzzy_match_infraspecies_within_species_helper,
-      target_df,
-      source = source
-    ) |>
+    dplyr::group_split()
+
+  res <- map_dfr_progress(
+    res_list,
+    fuzzy_match_infraspecies_within_species_helper,
+    target_df,
+    source = source
+  ) |>
     dplyr::relocate(c(
-      'Orig.Genus',
-      'Orig.Species',
-      'Orig.Infra.Rank',
-      'Orig.Infraspecies',
-      'Orig.Infraspecies_2'
+      'Orig.Genus', 'Orig.Species', 'Orig.Infra.Rank',
+      'Orig.Infraspecies', 'Orig.Infraspecies_2'
     ))
+
+  # Consolidate ambiguous infraspecies attributes
+  all_ambiguous_infraspecies <- lapply(seq_along(res_list), function(i) {
+    species <- unique(res_list[[i]]$Matched.Species)
+    group_res <- res[res$Matched.Species == species, ]
+    attr(group_res, "ambiguous_infraspecies")
+  })
+
+  all_ambiguous_infraspecies <- dplyr::bind_rows(
+    Filter(Negate(is.null), all_ambiguous_infraspecies)
+  )
+
+  if (nrow(all_ambiguous_infraspecies) > 0) {
+    attr(res, "ambiguous_infraspecies") <- all_ambiguous_infraspecies
+  }
 
   return(res)
 }
 
 
 #' Helper: Fuzzy Match Infraspecific Epithet within Species
-#'
-#' @description
-#' Helper function that performs fuzzy matching of infraspecific epithets
-#' for a single matched species. The infraspecific rank category must already
-#' be validated.
-#'
-#' @param df A tibble containing data for a single matched species.
-#' @param target_df A tibble representing the threatened species database.
-#'
-#' @return A tibble with fuzzy match results and logical indicator.
-#'
 #' @keywords internal
 fuzzy_match_infraspecies_within_species_helper <- function(df,
                                                            target_df,
                                                            source = "original") {
-  # Determinar capacidad de la BD
-  use_infraspecies_2 <- (source == "original")
-  # ==========================================================================
-  # SECTION 1: Extract Matched Species
-  # ==========================================================================
 
-  species_matched <- df|>
+  use_infraspecies_2 <- (source == "original")
+
+  species_matched <- df |>
     dplyr::distinct(Matched.Species) |>
     dplyr::pull(Matched.Species)
-
-  # ==========================================================================
-  # SECTION 2: Define Database Subset Function
-  # ==========================================================================
-  #tag_column <- if (use_infraspecies_2) "tag" else "tag_acc"
 
   get_threatened_infraspecies <- function(species_matched,
                                           target_df = NULL,
                                           source = source) {
     use_infraspecies_2 <- (source == "original")
-    if(use_infraspecies_2 == TRUE){
+
+    if (use_infraspecies_2 == TRUE) {
       return(
         target_df |>
           dplyr::filter(species %in% species_matched) |>
-          dplyr::select(c(
-            'genus',
-            'species',
-            'tag',
-            'infraspecies'
-          )) |>
-          dplyr::mutate(tag = toupper(tag)) |>  # Standardize to uppercase
-          tidyr::drop_na(tag, infraspecies)      # Only complete infraspecific taxa
+          dplyr::select(c('genus', 'species', 'tag', 'infraspecies')) |>
+          dplyr::mutate(tag = toupper(tag)) |>
+          tidyr::drop_na(tag, infraspecies)
       )
-    } else{
+    } else {
       return(
         target_df |>
           dplyr::filter(species %in% species_matched) |>
-          dplyr::select(c(
-            'genus',
-            'species',
-            'tag_acc',
-            'infraspecies'
-          )) |>
-          dplyr::mutate(tag_acc = toupper(tag_acc)) |>  # Standardize to uppercase
-          tidyr::drop_na(tag_acc, infraspecies)      # Only complete infraspecific taxa
+          dplyr::select(c('genus', 'species', 'tag_acc', 'infraspecies')) |>
+          dplyr::mutate(tag_acc = toupper(tag_acc)) |>
+          tidyr::drop_na(tag_acc, infraspecies)
       )
     }
   }
 
-  # Memoize for performance
   memoised_get_threatened_infrasp <- memoise::memoise(get_threatened_infraspecies)
-
-  # ==========================================================================
-  # SECTION 3: Get Database Subset for Current Species
-  # ==========================================================================
 
   database_subset <- memoised_get_threatened_infrasp(species_matched,
                                                      target_df,
                                                      source = source)
 
-  # If no infraspecific taxa in database, mark all as unmatched
   if (nrow(database_subset) == 0) {
     return(
       df |>
@@ -380,106 +439,96 @@ fuzzy_match_infraspecies_within_species_helper <- function(df,
     )
   }
 
-  # ==========================================================================
-  # SECTION 4: Fuzzy Match with Rank Category Filter
-  # ==========================================================================
-  # IMPORTANT: Only fuzzy match epithets within the SAME rank category
-  # This ensures "SUBSP. ovatoformes" only matches with "SUBSP. X" entries
-  # ==========================================================================
-  # Determinar qué columna de tag usar
-  tag_col_to_remove <- if(use_infraspecies_2) "tag" else "tag_acc"
+  tag_col_to_remove <- if (use_infraspecies_2) "tag" else "tag_acc"
 
-  matched <-
-    df |>
-    # Join by exact rank to filter candidates
+  matched <- df |>
     fuzzyjoin::stringdist_left_join(database_subset,
                                     by = c('Orig.Infraspecies' = 'infraspecies'),
                                     distance_col = 'fuzzy_infraspecies_dist') |>
-    # Assign matched values
     dplyr::mutate(Matched.Infraspecies = infraspecies) |>
     dplyr::select(-c('species', 'genus', 'infraspecies'),
-                  dplyr::all_of(tag_col_to_remove)) |>
+                  -dplyr::all_of(tag_col_to_remove)) |>
     dplyr::group_by(Orig.Genus, Orig.Species, Orig.Infra.Rank, Orig.Infraspecies) |>
-    dplyr::filter(fuzzy_infraspecies_dist == min(fuzzy_infraspecies_dist)) |>
+    dplyr::filter(fuzzy_infraspecies_dist == min(fuzzy_infraspecies_dist))
+
+  # Handle ambiguous infraspecies matches (CRAN compliant)
+  ambiguous_matches <- matched |>
+    dplyr::filter(dplyr::n() > 1)
+
+  if (nrow(ambiguous_matches) > 0) {
+    n_ambiguous <- ambiguous_matches |>
+      dplyr::distinct(Orig.Genus, Orig.Species, Orig.Infraspecies) |>
+      nrow()
+
+    warning(
+      "Found ", n_ambiguous, " infraspecies with multiple fuzzy matches ",
+      "within species '", species_matched, "' (tied string distances).\n",
+      "  The algorithm will automatically select the first match.\n",
+      "  To examine ambiguous matches, use: ",
+      "get_ambiguous_matches(result, type = 'infraspecies')\n",
+      "  Consider manual curation for critical applications.",
+      call. = FALSE,
+      immediate. = TRUE
+    )
+
+    attr(matched, "ambiguous_infraspecies") <- ambiguous_matches |>
+      dplyr::ungroup() |>
+      dplyr::select(
+        Orig.Genus, Orig.Species, Orig.Infra.Rank, Orig.Infraspecies,
+        Matched.Infraspecies, fuzzy_infraspecies_dist
+      ) |>
+      dplyr::arrange(Orig.Genus, Orig.Species, Orig.Infraspecies, Matched.Infraspecies)
+  }
+
+  matched_final <- matched |>
     dplyr::group_modify(
       ~ifelse(nrow(.x) == 0, return(.x),
               return(dplyr::slice_head(.x, n = 1)))
     ) |>
-    dplyr::ungroup() |>
-    as.data.frame()
+    dplyr::ungroup()
 
-  # ==========================================================================
-  # SECTION 5: Identify Unmatched Records
-  # ==========================================================================
-  # Records where no matching rank category exists in database,
-  # or epithet distance is too large
-  # ==========================================================================
+  if (!is.null(attr(matched, "ambiguous_infraspecies"))) {
+    attr(matched_final, "ambiguous_infraspecies") <- attr(matched, "ambiguous_infraspecies")
+  }
 
-  unmatched <-
-  fuzzyjoin::stringdist_anti_join(
-    dplyr::filter(df,
-                 !is.na(Orig.Infraspecies)),
-                 database_subset,
-                 by = c('Orig.Infraspecies' = 'infraspecies'))
+  unmatched <- fuzzyjoin::stringdist_anti_join(
+    dplyr::filter(df, !is.na(Orig.Infraspecies)),
+    database_subset,
+    by = c('Orig.Infraspecies' = 'infraspecies')
+  )
 
-  # ==========================================================================
-  # SECTION 6: Validate Row Counts
-  # ==========================================================================
+  assertthat::assert_that(nrow(df) == (nrow(matched_final) + nrow(unmatched)))
 
-  assertthat::assert_that(nrow(df) == (nrow(matched) + nrow(unmatched)))
-
-  combined <-
-    dplyr::bind_rows(matched,
-                    unmatched,
-                  .id = 'fuzzy_match_infraspecies') |>
+  combined <- dplyr::bind_rows(matched_final,
+                               unmatched,
+                               .id = 'fuzzy_match_infraspecies') |>
     dplyr::mutate(fuzzy_match_infraspecies = (fuzzy_match_infraspecies == "1")) |>
-    dplyr::relocate(c('Orig.Genus',
-                      'Orig.Species',
-                      'Orig.Infraspecies',
-                      'Orig.Infra.Rank',
-                      'Orig.Infraspecies_2'))
+    dplyr::relocate(c('Orig.Genus', 'Orig.Species', 'Orig.Infraspecies',
+                      'Orig.Infra.Rank', 'Orig.Infraspecies_2'))
+
+  if (!is.null(attr(matched_final, "ambiguous_infraspecies"))) {
+    attr(combined, "ambiguous_infraspecies") <- attr(matched_final, "ambiguous_infraspecies")
+  }
 
   return(combined)
 }
 
 
-#=====================================================================
-
+# =============================================================================
+# FUZZY MATCH INFRASPECIES LEVEL 2
+# =============================================================================
 
 #' Fuzzy Match Infraspecies Level 2 within Infraspecies Level 1
-#'
-#' @description
-#' This function performs a fuzzy match of the second infraspecific level within
-#' an already matched first infraspecific level from the list of threatened
-#' species in the database. Follows the same pattern as
-#' fuzzy_match_infraspecies_within_species.
-#'
-#' @param df A tibble containing the species data to be matched.
-#' @param target_df A tibble representing the threatened species database
-#'   containing the reference list of threatened species.
-#'
-#' @return
-#' A tibble with an additional logical column fuzzy_match_infraspecies2,
-#' indicating whether the second infraspecific level was successfully fuzzy
-#' matched within the matched first infraspecific level (`TRUE`) or not (`FALSE`).
-#'
 #' @keywords internal
 fuzzy_match_infraspecies2_within_infraspecies <- function(df, target_df = NULL) {
-  # df <- Node_6_FALSE
-  #  df
-  # Validar columnas requeridas
-  assertthat::assert_that(all(c('Orig.Genus',
-                                'Orig.Species',
-                                'Orig.Infraspecies',
-                                'Orig.Infraspecies_2',
-                                'Matched.Genus',
-                                'Matched.Species',
-                                'Matched.Infraspecies') %in% colnames(df)))
 
-  # Manejar caso de tibble vacío
-  if(nrow(df) == 0) {
-    if(!all(c('fuzzy_match_infraspecies_2',
-              'fuzzy_infraspecies_2_dist') %in% colnames(df))) {
+  assertthat::assert_that(all(c('Orig.Genus', 'Orig.Species', 'Orig.Infraspecies',
+                                'Orig.Infraspecies_2', 'Matched.Genus',
+                                'Matched.Species', 'Matched.Infraspecies') %in% colnames(df)))
+
+  if (nrow(df) == 0) {
+    if (!all(c('fuzzy_match_infraspecies_2',
+               'fuzzy_infraspecies_2_dist') %in% colnames(df))) {
       return(tibble::add_column(df,
                                 fuzzy_match_infraspecies_2 = NA,
                                 fuzzy_infraspecies_2_dist = NA))
@@ -488,32 +537,46 @@ fuzzy_match_infraspecies2_within_infraspecies <- function(df, target_df = NULL) 
     }
   }
 
-  # Eliminar columna de distancia previa si existe (para evitar duplicados)
-  if('fuzzy_infraspecies_2_dist' %in% colnames(df)) {
+  if ('fuzzy_infraspecies_2_dist' %in% colnames(df)) {
     df <- df |>
       dplyr::mutate(fuzzy_infraspecies_2_dist = NULL)
   }
 
-  # Procesar por grupos de Matched.Infraspecies usando helper
-  res <- df |>
+  res_list <- df |>
     dplyr::group_by(Matched.Infraspecies) |>
-    dplyr::group_split() |>
-    map_dfr_progress(fuzzy_match_infraspecies2_within_infraspecies_helper,
-                     target_df)
+    dplyr::group_split()
+
+  res <- map_dfr_progress(res_list,
+                          fuzzy_match_infraspecies2_within_infraspecies_helper,
+                          target_df)
+
+  # Consolidate ambiguous infraspecies 2 attributes
+  all_ambiguous_infrasp2 <- lapply(seq_along(res_list), function(i) {
+    infrasp1 <- unique(res_list[[i]]$Matched.Infraspecies)
+    group_res <- res[res$Matched.Infraspecies == infrasp1, ]
+    attr(group_res, "ambiguous_infraspecies_2")
+  })
+
+  all_ambiguous_infrasp2 <- dplyr::bind_rows(
+    Filter(Negate(is.null), all_ambiguous_infrasp2)
+  )
+
+  if (nrow(all_ambiguous_infrasp2) > 0) {
+    attr(res, "ambiguous_infraspecies_2") <- all_ambiguous_infrasp2
+  }
 
   return(res)
 }
+
 
 #' Helper function for fuzzy matching infraspecies level 2
 #' @keywords internal
 fuzzy_match_infraspecies2_within_infraspecies_helper <- function(df, target_df) {
 
-  # Obtener el infraspecies nivel 1 para este grupo
   infraspecies1 <- df |>
     dplyr::distinct(Matched.Infraspecies) |>
     unlist()
 
-  # Función para obtener infraspecies nivel 2 de la base de datos
   get_threatened_infraspecies2 <- function(infraspecies1, target_df = NULL) {
     return(target_df |>
              dplyr::filter(infraspecies %in% infraspecies1) |>
@@ -521,21 +584,17 @@ fuzzy_match_infraspecies2_within_infraspecies_helper <- function(df, target_df) 
                              'infraspecies', 'infraspecies_2')))
   }
 
-  # Memoizar para mejor performance
   memoised_get_threatened_infrasp2 <- memoise::memoise(get_threatened_infraspecies2)
 
-  # Obtener subset de la base de datos y eliminar NAs
   database_subset <- memoised_get_threatened_infrasp2(infraspecies1, target_df) |>
-    tidyr::drop_na(infraspecies_2)  # Solo mantener registros con nivel 2
+    tidyr::drop_na(infraspecies_2)
 
-  # Si no hay registros con nivel 2 en la BD, retornar sin match
-  if(nrow(database_subset) == 0) {
+  if (nrow(database_subset) == 0) {
     return(df |>
              dplyr::mutate(fuzzy_match_infraspecies_2 = FALSE,
                            fuzzy_infraspecies_2_dist = NA_real_))
   }
 
-  # Fuzzy match usando stringdist
   matched <- df |>
     fuzzyjoin::stringdist_left_join(database_subset,
                                     by = c('Orig.Infraspecies_2' = 'infraspecies_2'),
@@ -543,26 +602,62 @@ fuzzy_match_infraspecies2_within_infraspecies_helper <- function(df, target_df) 
     dplyr::mutate(Matched.Infraspecies_2 = infraspecies_2) |>
     dplyr::select(-c('species', 'genus', 'infraspecies', 'infraspecies_2')) |>
     dplyr::group_by(Orig.Genus, Orig.Species, Orig.Infraspecies, Orig.Infraspecies_2) |>
-    dplyr::filter(fuzzy_infraspecies_2_dist == min(fuzzy_infraspecies_2_dist)) |>
+    dplyr::filter(fuzzy_infraspecies_2_dist == min(fuzzy_infraspecies_2_dist))
+
+  # Handle ambiguous infraspecies 2 matches (CRAN compliant)
+  ambiguous_matches <- matched |>
+    dplyr::filter(dplyr::n() > 1)
+
+  if (nrow(ambiguous_matches) > 0) {
+    n_ambiguous <- ambiguous_matches |>
+      dplyr::distinct(Orig.Genus, Orig.Species, Orig.Infraspecies,
+                      Orig.Infraspecies_2) |>
+      nrow()
+
+    warning(
+      "Found ", n_ambiguous, " infraspecies level 2 with multiple fuzzy matches ",
+      "within infraspecies '", infraspecies1, "' (tied string distances).\n",
+      "  The algorithm will automatically select the first match.\n",
+      "  To examine ambiguous matches, use: ",
+      "get_ambiguous_matches(result, type = 'infraspecies')\n",
+      "  Consider manual curation for critical applications.",
+      call. = FALSE,
+      immediate. = TRUE
+    )
+
+    attr(matched, "ambiguous_infraspecies_2") <- ambiguous_matches |>
+      dplyr::ungroup() |>
+      dplyr::select(
+        Orig.Genus, Orig.Species, Orig.Infraspecies, Orig.Infraspecies_2,
+        Matched.Infraspecies_2, fuzzy_infraspecies_2_dist
+      ) |>
+      dplyr::arrange(Orig.Genus, Orig.Species, Orig.Infraspecies,
+                     Orig.Infraspecies_2, Matched.Infraspecies_2)
+  }
+
+  matched_final <- matched |>
     dplyr::group_modify(
       ~ifelse(nrow(.x) == 0, return(.x),
               return(dplyr::slice_head(.x, n = 1)))
     ) |>
     dplyr::ungroup()
 
-  # Anti-join para encontrar los no matcheados
+  if (!is.null(attr(matched, "ambiguous_infraspecies_2"))) {
+    attr(matched_final, "ambiguous_infraspecies_2") <- attr(matched, "ambiguous_infraspecies_2")
+  }
+
   unmatched <- fuzzyjoin::stringdist_anti_join(
     dplyr::filter(df, !is.na(Orig.Infraspecies_2)),
     database_subset,
     by = c('Orig.Infraspecies_2' = 'infraspecies_2')
   )
 
-  # Verificación de integridad
-  assertthat::assert_that(nrow(df) == (nrow(matched) + nrow(unmatched)),
-                          msg = "Row count mismatch in fuzzy_match_infraspecies2")
+  assertthat::assert_that(
+    nrow(df) == (nrow(matched_final) + nrow(unmatched)),
+    msg = "Row count mismatch in fuzzy_match_infraspecies2"
+  )
 
-  # Combinar matched y unmatched con indicador booleano
-  combined <- dplyr::bind_rows(matched,
+  combined <- dplyr::bind_rows(matched_final,
                                unmatched,
                                .id = 'fuzzy_match_infraspecies_2') |>
     dplyr::mutate(fuzzy_match_infraspecies_2 = (fuzzy_match_infraspecies_2 == "1")) |>
@@ -571,5 +666,226 @@ fuzzy_match_infraspecies2_within_infraspecies_helper <- function(df, target_df) 
                       'Orig.Infraspecies',
                       'Orig.Infraspecies_2'))
 
+  if (!is.null(attr(matched_final, "ambiguous_infraspecies_2"))) {
+    attr(combined, "ambiguous_infraspecies_2") <- attr(matched_final, "ambiguous_infraspecies_2")
+  }
+
   return(combined)
+}
+
+
+# =============================================================================
+# GET AMBIGUOUS MATCHES - COMPANION FUNCTION
+# =============================================================================
+
+#' Retrieve Ambiguous Match Information
+#'
+#' @description
+#' Extracts information about ambiguous matches (multiple candidates with
+#' tied distances) from matching results. This is useful for quality control
+#' and manual curation of uncertain matches.
+#'
+#' @param match_result A tibble returned by matching functions such as
+#'   \code{\link{matching_threatenedperu}} or internal matching functions.
+#' @param type Character. Type of ambiguous matches to retrieve:
+#'   \itemize{
+#'     \item \code{"genus"} (default): Ambiguous genus-level matches
+#'     \item \code{"species"}: Ambiguous species-level matches
+#'     \item \code{"infraspecies"}: Ambiguous infraspecies-level matches (includes level 2)
+#'     \item \code{"all"}: All types of ambiguous matches
+#'   }
+#' @param save_to_file Logical. If TRUE, saves results to a CSV file.
+#'   Default is FALSE (CRAN compliant - no automatic file writing).
+#' @param output_dir Character. Directory to save the file if save_to_file = TRUE.
+#'   Defaults to \code{tempdir()} for safe file operations.
+#'
+#' @return
+#' A tibble with ambiguous match details, or NULL if no ambiguous matches exist.
+#' Columns depend on the match type but typically include original names,
+#' matched names, and distance metrics.
+#'
+#' @details
+#' During fuzzy matching, multiple candidates may have identical string distances,
+#' making the choice of match ambiguous. The matching algorithm automatically
+#' selects the first candidate, but this function allows you to:
+#' \itemize{
+#'   \item Review all ambiguous matches for quality control
+#'   \item Export them for manual curation
+#'   \item Make informed decisions about match quality
+#' }
+#'
+#' @section File Output:
+#' When \code{save_to_file = TRUE}, a timestamped CSV file is created:
+#' \itemize{
+#'   \item Filename format: "threatenedperu_ambiguous_[type]_[timestamp].csv"
+#'   \item Location: \code{output_dir} (defaults to tempdir())
+#'   \item Contains all ambiguous matches with metadata
+#' }
+#'
+#' @export
+#' @examples
+#' \donttest{
+#' # Basic usage after matching
+#' species_list <- c("Catleya maxima", "Polylepis incana")  # Note typo in Cattleya
+#' result <- is_threatened_peru(species_list, return_details = TRUE)
+#'
+#' # Check for ambiguous genus matches
+#' ambig_genera <- get_ambiguous_matches(result, type = "genus")
+#' if (!is.null(ambig_genera)) {
+#'   print(ambig_genera)
+#' }
+#'
+#' # Get all types of ambiguous matches
+#' all_ambig <- get_ambiguous_matches(result, type = "all")
+#'
+#' # Save to file for manual review (optional)
+#' ambig_genera <- get_ambiguous_matches(
+#'   result,
+#'   type = "genus",
+#'   save_to_file = TRUE,
+#'   output_dir = tempdir()
+#' )
+#' }
+get_ambiguous_matches <- function(match_result,
+                                  type = c("genus", "species", "infraspecies", "all"),
+                                  save_to_file = FALSE,
+                                  output_dir = tempdir()) {
+
+  type <- match.arg(type)
+
+  # ========================================================================
+  # SECTION 1: Validate Input
+  # ========================================================================
+
+  if (!inherits(match_result, "data.frame")) {
+    stop(
+      "match_result must be a data frame or tibble returned by a matching function.",
+      call. = FALSE
+    )
+  }
+
+  # ========================================================================
+  # SECTION 2: Extract Ambiguous Match Attributes
+  # ========================================================================
+
+  ambiguous_data <- list()
+
+  # Check for genus-level ambiguous matches
+  if (type %in% c("genus", "all") && !is.null(attr(match_result, "ambiguous_genera"))) {
+    ambiguous_data$genus <- attr(match_result, "ambiguous_genera") |>
+      dplyr::mutate(Match_Type = "Genus", .before = 1)
+  }
+
+  # Check for species-level ambiguous matches
+  if (type %in% c("species", "all") && !is.null(attr(match_result, "ambiguous_species"))) {
+    ambiguous_data$species <- attr(match_result, "ambiguous_species") |>
+      dplyr::mutate(Match_Type = "Species", .before = 1)
+  }
+
+  # Check for infraspecies-level ambiguous matches (includes both level 1 and 2)
+  if (type %in% c("infraspecies", "all")) {
+    # Check for level 1 infraspecies
+    if (!is.null(attr(match_result, "ambiguous_infraspecies"))) {
+      ambiguous_data$infraspecies <- attr(match_result, "ambiguous_infraspecies") |>
+        dplyr::mutate(Match_Type = "Infraspecies", .before = 1)
+    }
+
+    # Check for level 2 infraspecies (quaternomial names)
+    if (!is.null(attr(match_result, "ambiguous_infraspecies_2"))) {
+      infrasp2_data <- attr(match_result, "ambiguous_infraspecies_2") |>
+        dplyr::mutate(Match_Type = "Infraspecies_2", .before = 1)
+
+      # Combine with level 1 if both exist
+      if ("infraspecies" %in% names(ambiguous_data)) {
+        ambiguous_data$infraspecies <- dplyr::bind_rows(
+          ambiguous_data$infraspecies,
+          infrasp2_data
+        )
+      } else {
+        ambiguous_data$infraspecies <- infrasp2_data
+      }
+    }
+  }
+
+  # ========================================================================
+  # SECTION 3: Handle No Ambiguous Matches
+  # ========================================================================
+
+  if (length(ambiguous_data) == 0) {
+    message(
+      "No ambiguous ", type, " matches found in the result.\n",
+      "This is good news - all matches were unambiguous!"
+    )
+    return(invisible(NULL))
+  }
+
+  # ========================================================================
+  # SECTION 4: Combine Results
+  # ========================================================================
+
+  if (type == "all") {
+    result <- dplyr::bind_rows(ambiguous_data)
+  } else {
+    result <- ambiguous_data[[type]]
+  }
+
+  # Add summary information
+  n_matches <- nrow(result)
+  n_original <- result |>
+    dplyr::distinct(dplyr::across(dplyr::starts_with("Orig."))) |>
+    nrow()
+
+  message(
+    "Found ", n_matches, " ambiguous match(es) for ",
+    n_original, " original name(s).\n"
+  )
+
+  # ========================================================================
+  # SECTION 5: Optional File Export
+  # ========================================================================
+
+  if (save_to_file) {
+    # Validate output directory
+    if (!dir.exists(output_dir)) {
+      tryCatch({
+        dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+      }, error = function(e) {
+        stop(
+          "Cannot create output directory: ", output_dir, "\n",
+          "Error: ", e$message,
+          call. = FALSE
+        )
+      })
+    }
+
+    # Create timestamped filename
+    timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+    filename <- paste0(
+      "threatenedperu_ambiguous_",
+      type,
+      "_",
+      timestamp,
+      ".csv"
+    )
+    filepath <- file.path(output_dir, filename)
+
+    # Write file
+    tryCatch({
+      readr::write_csv(result, filepath)
+      message("Ambiguous matches saved to: ", filepath)
+    }, error = function(e) {
+      warning(
+        "Failed to write file: ", filepath, "\n",
+        "Error: ", e$message,
+        call. = FALSE,
+        immediate. = TRUE
+      )
+    })
+  }
+
+  # ========================================================================
+  # SECTION 6: Return Results
+  # ========================================================================
+
+  return(result)
 }

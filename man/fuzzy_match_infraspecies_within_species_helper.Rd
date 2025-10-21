@@ -10,17 +10,7 @@ fuzzy_match_infraspecies_within_species_helper(
   source = "original"
 )
 }
-\arguments{
-\item{df}{A tibble containing data for a single matched species.}
-
-\item{target_df}{A tibble representing the threatened species database.}
-}
-\value{
-A tibble with fuzzy match results and logical indicator.
-}
 \description{
-Helper function that performs fuzzy matching of infraspecific epithets
-for a single matched species. The infraspecific rank category must already
-be validated.
+Helper: Fuzzy Match Infraspecific Epithet within Species
 }
 \keyword{internal}

@@ -9,14 +9,27 @@ fuzzy_match_genus(df, target_df = NULL)
 \arguments{
 \item{df}{A tibble containing the genus names to be matched.}
 
-\item{target_df}{A tibble representing the threatened species database containing the reference list of threatened species.}
+\item{target_df}{A tibble representing the threatened species database
+containing the reference list of threatened species.}
 }
 \value{
 A tibble with two additional columns:
-- fuzzy_match_genus: A logical column indicating whether the genus was successfully matched (`TRUE`) or not (`FALSE`).
+- fuzzy_match_genus: A logical column indicating whether the genus was
+  successfully matched (`TRUE`) or not (`FALSE`).
 - fuzzy_genus_dist: A numeric column representing the distance for each match.
 }
 \description{
-This function performs a fuzzy match of genus names against the threatened species database using fuzzyjoin::stringdist() to account for slight variations in spelling.
+This function performs a fuzzy match of genus names against the threatened
+species database using fuzzyjoin::stringdist() to account for slight
+variations in spelling.
+}
+\details{
+If multiple genera match with the same string distance (ambiguous matches),
+a warning is issued and the first match is automatically selected. To
+examine ambiguous matches in detail, use \code{\link{get_ambiguous_matches}}
+on the result object.
+}
+\seealso{
+\code{\link{get_ambiguous_matches}} to retrieve ambiguous match details
 }
 \keyword{internal}

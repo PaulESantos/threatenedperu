@@ -2,19 +2,11 @@
 % Please edit documentation in R/fuzzy_match.R
 \name{fuzzy_match_species_within_genus_helper}
 \alias{fuzzy_match_species_within_genus_helper}
-\title{Fuzzy Match Species within Genus}
+\title{Fuzzy Match Species within Genus - Helper}
 \usage{
 fuzzy_match_species_within_genus_helper(df, target_df)
 }
-\arguments{
-\item{df}{A tibble containing the species data to be matched.}
-
-\item{target_df}{A tibble representing the threatened species database containing the reference list of threatened species.}
-}
-\value{
-A tibble with an additional logical column fuzzy_match_species_within_genus, indicating whether the specific epithet was successfully fuzzy matched within the matched genus (`TRUE`) or not (`FALSE`).
-}
 \description{
-This function attempts to fuzzy match species names within a genus to the threatened species database using fuzzyjoin::stringdist for fuzzy matching.
+Fuzzy Match Species within Genus - Helper
 }
 \keyword{internal}
