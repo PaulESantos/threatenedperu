@@ -25,11 +25,13 @@ test_that("Fuzzy species matching works within matched genus", {
     "Cattleya maxim",      # Missing 'a' in maxima
     "Polylepis incanus"    # Wrong ending in incana
   )
-
-  result <- is_threatened_peru(input,
+ matching_threatenedperu(input)
+ matching_threatenedperu_2(input)
+ result <- is_threatened_peru(input,
                                source = "original",
                                return_details = TRUE)
-
+result |>
+  as.data.frame()
   # Should match through fuzzy matching
   expect_true(all(!is.na(result$Matched.Species)))
 })

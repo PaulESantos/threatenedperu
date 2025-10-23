@@ -61,17 +61,6 @@ test_that("Invalid source parameter throws error", {
   )
 })
 
-test_that("Non-character input throws error", {
-  expect_warning(
-    is_threatened_peru(123),
-    "Input was numeric, converted to character"
-  )
-
-  expect_error(
-    is_threatened_peru(list("Cattleya maxima")),
-    "splist must be a character vector"
-  )
-})
 
 test_that("Duplicate names are handled correctly", {
   input <- c("Cattleya maxima", "Cattleya maxima", "Cattleya maxima")

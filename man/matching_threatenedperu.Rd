@@ -12,38 +12,78 @@ matching_threatenedperu(splist, source = "original")
 \item{source}{Character string specifying which database version to use.
 Options are:
 \itemize{
-  \item \code{"original"} (default): Uses the original threatened species database
-  \item \code{"updated"}: Uses the updated database with synonyms
+  \item \code{"original"} (default): Uses the original threatened species
+    database with support for Rank 4 (quaternomial names)
+  \item \code{"updated"}: Uses the updated database with current
+    nomenclature, supporting up to Rank 3 (trinomial names)
 }}
 }
 \value{
-A tibble with detailed matching results including matched names, threat status,
-and matching methodology information.
+A tibble with detailed matching results including:
+\describe{
+  \item{Orig.Name}{Original input name}
+  \item{Matched.Name}{Matched name from database}
+  \item{Threat.Status}{IUCN threat category or "Not threatened"}
+  \item{Rank}{Input taxonomic rank (1-4)}
+  \item{Matched.Rank}{Matched taxonomic rank}
+  \item{Comp.Rank}{Logical, whether ranks match exactly}
+  \item{Match.Level}{Description of match quality}
+  \item{matched}{Logical, whether a match was found}
+}
+
+The result also includes metadata attributes:
+\itemize{
+  \item \code{use_infraspecies_2}: Whether Rank 4 is supported
+  \item \code{target_database}: Database used ("original" or "updated")
+  \item \code{matching_date}: Date of matching
+  \item \code{n_input}: Number of input names
+  \item \code{n_matched}: Number of successful matches
+  \item \code{match_rate}: Percentage of successful matches
+}
 }
 \description{
-This function matches given species names against the internal database of threatened
-plant species in Peru. It uses a hierarchical matching strategy that includes direct
-matching, genus-level matching, fuzzy matching, and suffix matching to maximize
-successful matches while maintaining accuracy.
+This function matches given species names against the internal database of
+threatened plant species in Peru. It uses a hierarchical matching strategy
+that includes direct matching, genus-level matching, fuzzy matching, and
+suffix matching to maximize successful matches while maintaining accuracy.
 }
 \details{
 The matching process follows a hierarchical pipeline with robust handling of
 infraspecific ranks at two levels (when supported by the database).
 
+**Matching Strategy:**
+1. Direct exact matching
+2. Genus-level matching (exact and fuzzy)
+3. Species-level matching within genus
+4. Infraspecies-level matching (up to 2 levels for original database)
+
+**Rank Validation:**
+The algorithm implements strict rank validation to prevent false positives.
+For example, if a user inputs a trinomial name (Rank 3) but only a binomial
+(Rank 2) exists in the database, the match is rejected.
+
 **Ambiguous Matches:**
 When multiple candidates have identical match scores (string distances), the
-algorithm automatically selects the first match and issues a warning. To review
-ambiguous matches for quality control, use \code{\link{get_ambiguous_matches}}
-on the result object.
+algorithm automatically selects the first match and issues a warning. To
+review ambiguous matches for quality control, use
+\code{\link{get_ambiguous_matches}} on the result object.
 }
 \examples{
 \dontrun{
+# Basic usage
 species_list <- c("Cattleya maxima", "Polylepis incana")
 results <- matching_threatenedperu(species_list, source = "original")
+
+# Access metadata
+attr(results, "match_rate")
+
+# Check for ambiguous matches
+ambig <- get_ambiguous_matches(results, type = "all")
 }
 
 }
 \seealso{
 \code{\link{is_threatened_peru}} for a simplified interface
 \code{\link{get_ambiguous_matches}} to retrieve ambiguous match details
+\code{\link{get_threatened_database}} to access the raw databases
 }
