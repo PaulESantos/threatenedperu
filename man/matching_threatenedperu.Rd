@@ -4,7 +4,11 @@
 \alias{matching_threatenedperu}
 \title{Match Species Names to Threatened Plant List of Peru}
 \usage{
-matching_threatenedperu(splist, source = "original")
+matching_threatenedperu(
+  splist,
+  source = c("original", "updated"),
+  quiet = TRUE
+)
 }
 \arguments{
 \item{splist}{A character vector containing the species names to be matched.}
@@ -17,6 +21,8 @@ Options are:
   \item \code{"updated"}: Uses the updated database with current
     nomenclature, supporting up to Rank 3 (trinomial names)
 }}
+
+\item{quiet}{Logical, default TRUE}
 }
 \value{
 A tibble with detailed matching results including:

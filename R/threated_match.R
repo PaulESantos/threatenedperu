@@ -9,7 +9,7 @@
 #' threatened plant species in Peru. It uses a hierarchical matching strategy
 #' that includes direct matching, genus-level matching, fuzzy matching, and
 #' suffix matching to maximize successful matches while maintaining accuracy.
-#'
+
 #' @param splist A character vector containing the species names to be matched.
 #' @param source Character string specifying which database version to use.
 #'   Options are:
@@ -19,6 +19,7 @@
 #'     \item \code{"updated"}: Uses the updated database with current
 #'       nomenclature, supporting up to Rank 3 (trinomial names)
 #'   }
+#' @param quiet Logical, default TRUE
 #'
 #' @details
 #' The matching process follows a hierarchical pipeline with robust handling of
@@ -83,58 +84,56 @@
 #' }
 #'
 #' @export
-matching_threatenedperu <- function(splist, source = "original") {
+matching_threatenedperu <- function(splist, source = c("original", "updated"), quiet = TRUE) {
+  source <- match.arg(source)
+  use_infraspecies_2 <- identical(source, "original")
 
-  # ==========================================================================
-  # STEP 1: Initialize Configuration
-  # ==========================================================================
-  config <- .initialize_matching_config(source)
+  # 1) Validación de inputs y carga de base
+  .validate_inputs(splist, quiet)
+  target_prepared <- .load_target(source, quiet)
+  .validate_target_schema(target_prepared, use_infraspecies_2)
 
-  # ==========================================================================
-  # STEP 2: Preprocess Input
-  # ==========================================================================
-  preprocessed <- .preprocess_input(splist, config)
-
-  # Early return if all names filtered out
-  if (nrow(preprocessed$df) == 0) {
-    return(.create_empty_result(preprocessed$splist_class, config))
+  # 2) Clasificación y preprocesamiento
+  splist_class <- .classify_inputs(splist)
+  parts <- .split_valid_invalid(splist_class)
+  df <- parts$valid
+  if (nrow(df) == 0L) {
+    res <- .empty_output(splist_class, use_infraspecies_2, source)
+    return(.attach_metadata(res, use_infraspecies_2, source, nrow(splist_class), 0L))
   }
+  df <- .init_matching_columns(df, use_infraspecies_2, source, quiet)
+  .warn_on_rank4_if_unsupported(df, use_infraspecies_2, source, quiet)
 
-  # ==========================================================================
-  # STEP 3: Run Matching Pipeline
-  # ==========================================================================
-  matched_results <- .run_matching_pipeline(
-    df = preprocessed$df,
-    target_df = config$target_prepared,
-    config = config
+  # 3) Pipeline jerárquico (nodos 1–5)
+  pipe_1_5 <- .pipeline_nodes_1_to_5(df, target_prepared, quiet)
+
+  # 4) Validación por rango y consolidación
+  combined <- .combine_nodes(pipe_1_5)
+  combined <- .compute_matched_rank_and_validate(combined, use_infraspecies_2)
+  lists <- .split_matched_invalid_unmatched(combined, pipe_1_5, quiet)
+
+  # 5) Infraspecies (nodos 6–7)
+  infra_out <- .pipeline_nodes_6_7(lists, target_prepared, source, use_infraspecies_2)
+
+  # 6) Join de amenaza + formato
+  res_complete <- .join_threat_and_format(
+    base_df = dplyr::select(splist_class,
+                            "sorter","Orig.Name","Orig.Genus","Orig.Species",
+                            "Orig.Infraspecies","Orig.Infraspecies_2",
+                            "Rank","Orig.Infra.Rank","Orig.Infra.Rank_2","Author"
+    ),
+    res = infra_out$res,
+    target_prepared = target_prepared,
+    use_infraspecies_2 = use_infraspecies_2
   )
 
-  # ==========================================================================
-  # STEP 4: Validate Rank Matches (CRITICAL - Prevents False Positives)
-  # ==========================================================================
-  validated_results <- .validate_rank_matches(
-    matched_results = matched_results,
-    use_infraspecies_2 = config$use_infraspecies_2
-  )
+  # 7) Nombre formateado, nivel de match, status
+  output_f <- .finalize_output(res_complete, use_infraspecies_2)
 
-  # ==========================================================================
-  # STEP 5: Add Threat Information
-  # ==========================================================================
-  output_with_threat <- .add_threat_information(
-    results = validated_results$combined,
-    splist_class = preprocessed$splist_class,
-    target_df = config$target_prepared,
-    config = config
-  )
-
-  # ==========================================================================
-  # STEP 6: Finalize Output
-  # ==========================================================================
-  final_output <- .finalize_output(
-    output = output_with_threat,
-    splist_class = preprocessed$splist_class,
-    config = config
-  )
-
-  return(final_output)
+  # 8) Validaciones finales y metadatos
+  .final_assertions(splist_class, output_f)
+  output_f <- .cleanup_infrasp2_if_needed(output_f, use_infraspecies_2)
+  .attach_metadata(output_f, use_infraspecies_2, source,
+                   n_input = nrow(splist_class),
+                   n_matched = sum(output_f$matched, na.rm = TRUE))
 }
