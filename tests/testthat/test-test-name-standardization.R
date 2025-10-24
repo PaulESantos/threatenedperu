@@ -15,13 +15,15 @@ test_that("Hybrid markers are removed correctly with warning", {
     "CATTLEYA MAXIMA"
   )
 
-  # Capture both result and warning
-  result <- expect_warning(
-    threatenedperu:::.names_standardize(input),
-    "The 'X' sign indicating hybrids have been removed"
+  # Captura el warning y, a la vez, asigna la salida a 'out'
+  expect_warning(
+    out <- threatenedperu:::.names_standardize(input),
+    regexp = "The 'X' sign indicating hybrids have been removed",
+    fixed  = FALSE
   )
 
-  expect_equal(result, expected)
+  # Verifica el resultado (no vuelvas a llamar la función para evitar un segundo warning)
+  expect_equal(out, expected)
 })
 
 test_that("Leading and trailing whitespace is removed", {

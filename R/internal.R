@@ -778,6 +778,7 @@ utils::globalVariables(c(
   "sorter",
   "val_rank_declred",
   "source",
+  '.data',
 
   # ============================================================
   # Operadores

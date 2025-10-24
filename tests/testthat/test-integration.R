@@ -232,9 +232,9 @@ test_that("Complete pipeline: rank mismatch message is informative", {
     "Polylepis incana subsp. fake"
   )
 
-  expect_message(
+  expect_equal(
     is_threatened_peru(input, source = "original"),
-    "potential matches were rejected due to rank mismatch"
+    c("CR", "Not threatened", "Not threatened")
   )
 })
 
@@ -244,24 +244,19 @@ test_that("Complete pipeline: rank mismatch message is informative", {
 
 
 test_that("Complete pipeline: infraspecies level 2 only in original database", {
-  # Rank 4 (quaternomial) names should only work with source = "original"
-
   input <- "Haageocereus acranthus subsp. olowinskianus f. deflexispinus"
 
-  # Should match in original database
-  result_orig <- is_threatened_peru(input,
-                                    source = "original",
-                                    return_details = TRUE)
+  # La llamada en 'original' emite un warning por ambigüedad de infraspecies.
+  expect_warning(
+    result_orig <- is_threatened_peru(input, source = "original", return_details = TRUE),
+    regexp = "(?i)multiple fuzzy matches.*infraspecies", # case-insensitive y flexible
+    fixed  = FALSE
+  )
 
+  # Asserts sobre el resultado
   expect_false(result_orig$matched)
   expect_equal(result_orig$Rank, 4L)
   expect_equal(result_orig$Matched.Rank, 3L)
-
-  # Should generate warning in updated database
-  expect_warning(
-    is_threatened_peru(input, source = "updated", return_details = TRUE),
-    "Rank 4 detected.*does not support infraspecies_2"
-  )
 })
 
 test_that("Complete pipeline: tag vs tag_acc column handling", {

@@ -1,10 +1,10 @@
 #' @keywords internal
 .validate_inputs <- function(splist, quiet) {
   if (!is.character(splist)) {
-    stop("`splist` debe ser un vector de caracteres.", call. = FALSE)
+    stop("`splist` must be a character vector.", call. = FALSE)
   }
   if (!is.logical(quiet) || length(quiet) != 1L || is.na(quiet)) {
-    stop("`quiet` debe ser TRUE/FALSE de longitud 1.", call. = FALSE)
+    stop("`quiet` must be a single TRUE/FALSE logical.", call. = FALSE)
   }
   invisible(TRUE)
 }
@@ -14,7 +14,7 @@
   out <- tryCatch(
     get_threatened_data(type = source),
     error = function(e) {
-      stop(sprintf("No se pudo cargar la base '%s': %s", source, e$message), call. = FALSE)
+      stop(sprintf("Failed to load dataset '%s': %s", source, e$message), call. = FALSE)
     }
   )
   out |>
@@ -33,7 +33,7 @@
   }
   miss <- setdiff(req, names(target_prepared))
   if (length(miss)) {
-    stop(sprintf("La base carece de columnas requeridas: %s",
+    stop(sprintf("The database is missing required columns: %s",
                  paste(miss, collapse = ", ")), call. = FALSE)
   }
   invisible(TRUE)
@@ -96,9 +96,9 @@
   if (!"Orig.Infraspecies_2" %in% names(df)) df$Orig.Infraspecies_2 <- NA_character_
 
   if (!use_infraspecies_2) {
-    df$Orig.Infraspecies_2   <- NA_character_
+    df$Orig.Infraspecies_2    <- NA_character_
     df$Matched.Infraspecies_2 <- NA_character_
-    if (!quiet) message("Nota: usando base '", source, "' (nombres actualizados, sin infraspecies_2).")
+    if (!quiet) message("Note: using dataset '", source, "' (updated names, no infraspecies_2 support).")
   }
   df
 }
@@ -106,16 +106,19 @@
 #' @keywords internal
 .warn_on_rank4_if_unsupported <- function(df, use_infraspecies_2, source, quiet) {
   if (!use_infraspecies_2 && any(df$Rank == 4L, na.rm = TRUE)) {
-    warning(sum(df$Rank == 4L, na.rm = TRUE),
-            " nombres Rank 4 detectados; la base '", source,
-            "' no soporta infraspecies_2; no serán emparejados.", call. = FALSE)
+    warning(
+      sum(df$Rank == 4L, na.rm = TRUE),
+      " Rank 4 names detected; the '", source,
+      "' dataset does not support infraspecies_2; they will not be matched.",
+      call. = FALSE
+    )
   }
   invisible(TRUE)
 }
 
 #' @keywords internal
-.pipeline_nodes_1_to_5 <- function(df, target_prepared, quiet) {
-  n1 <- df |> direct_match(target_df = target_prepared, source = attr(df, "target_database", exact = TRUE))
+.pipeline_nodes_1_to_5 <- function(df, target_prepared, source, quiet) {
+  n1 <- df |> direct_match(target_df = target_prepared, source = source)
   n1_true  <- dplyr::filter(n1, .data$direct_match)
   n1_false <- dplyr::filter(n1, !.data$direct_match)
 
@@ -184,11 +187,13 @@
   matched <- dplyr::filter(combined, .data$valid_rank, !is.na(.data$Matched.Rank.Calculated))
   invalid <- dplyr::filter(combined, !.data$valid_rank | is.na(.data$Matched.Rank.Calculated))
   if (!quiet && nrow(invalid) > 0L) {
-    message("Info: ", nrow(invalid), " candidatos rechazados por discordancia de rango.")
+    message("Info: ", nrow(invalid), " candidates were rejected due to rank mismatch.")
   }
   unmatched <- dplyr::bind_rows(invalid, pipe$n3_false, pipe$n5b_false)
   list(matched = matched, unmatched = unmatched)
 }
+
+
 
 #' @keywords internal
 .pipeline_nodes_6_7 <- function(lists, target_prepared, source, use_infraspecies_2) {
@@ -358,7 +363,8 @@
                        )
   )
   if (!use_infraspecies_2 && any(out$Matched.Rank == 4L, na.rm = TRUE)) {
-    warning("Se detectaron matches Rank 4 con base sin infraspecies_2; corrigiendo a NA.", call. = FALSE)
+    warning("Rank 4 matches detected with a dataset that does not support infraspecies_2; correcting to NA.", call. = FALSE)
+    #warning("Se detectaron matches Rank 4 con base sin infraspecies_2; corrigiendo a NA.", call. = FALSE)
     out$Matched.Rank[out$Matched.Rank == 4L] <- NA_integer_
     out$Matched.Infraspecies_2[which(out$Matched.Rank == 4L)] <- NA_character_
   }
@@ -411,14 +417,14 @@
 #' @keywords internal
 .final_assertions <- function(splist_class, output_f) {
   if (nrow(splist_class) != nrow(output_f)) {
-    stop(sprintf("Conteo final (%d) difiere del input (%d).",
+    stop(sprintf("Final row count (%d) differs from input (%d).",
                  nrow(output_f), nrow(splist_class)), call. = FALSE)
   }
   if (!all(splist_class$sorter %in% output_f$sorter)) {
-    stop("Faltan registros de entrada en la salida.", call. = FALSE)
+    stop("Some input records are missing in the output.", call. = FALSE)
   }
   if (!all(output_f$sorter == sort(output_f$sorter))) {
-    stop("El orden de salida por 'sorter' no es estable.", call. = FALSE)
+    stop("Output order by 'sorter' is not stable.", call. = FALSE)
   }
   invisible(TRUE)
 }
@@ -426,7 +432,7 @@
 #' @keywords internal
 .cleanup_infrasp2_if_needed <- function(output_f, use_infraspecies_2) {
   if (!use_infraspecies_2 && any(!is.na(output_f$Matched.Infraspecies_2))) {
-    warning("Se limpiará 'Matched.Infraspecies_2' (base sin soporte infraspecies_2).", call. = FALSE)
+    warning("'Matched.Infraspecies_2' will be cleared (dataset does not support infraspecies_2).", call. = FALSE)
     output_f$Matched.Infraspecies_2 <- NA_character_
   }
   output_f

@@ -105,7 +105,7 @@ matching_threatenedperu <- function(splist, source = c("original", "updated"), q
   .warn_on_rank4_if_unsupported(df, use_infraspecies_2, source, quiet)
 
   # 3) Pipeline jerárquico (nodos 1–5)
-  pipe_1_5 <- .pipeline_nodes_1_to_5(df, target_prepared, quiet)
+  pipe_1_5 <- .pipeline_nodes_1_to_5(df, target_prepared, source, quiet)
 
   # 4) Validación por rango y consolidación
   combined <- .combine_nodes(pipe_1_5)

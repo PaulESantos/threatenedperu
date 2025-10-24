@@ -57,7 +57,8 @@ test_that("Genus-only names generate informative message", {
 test_that("Invalid source parameter throws error", {
   expect_error(
     is_threatened_peru("Cattleya maxima", source = "invalid"),
-    "Invalid source value"
+    regexp = "should be one of.*original.*updated",
+    fixed  = FALSE
   )
 })
 

@@ -62,7 +62,7 @@ test_that("Database capacity is respected (infraspecies_2)", {
 
   expect_warning(
     is_threatened_peru(input, source = "updated", return_details = TRUE),
-    "species with Rank 4 detected"
+    "Rank 4 names detected; the 'updated' dataset does not support infraspecies_2; they will not be matched"
   )
 })
 
@@ -79,3 +79,4 @@ test_that("Whitespace in database doesn't prevent matching", {
   expect_equal(result$Orig.Name, "Deprea macrocalyx")
   expect_equal(result$Matched.Name, "Deprea macrocalyx")
 })
+
