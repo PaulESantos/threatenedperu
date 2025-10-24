@@ -11,7 +11,8 @@ matching_threatenedperu(
 )
 }
 \arguments{
-\item{splist}{A character vector containing the species names to be matched.}
+\item{splist}{A character vector containing the species names to be matched.
+Can include duplicate names - results will be expanded to match the input.}
 
 \item{source}{Character string specifying which database version to use.
 Options are:
@@ -22,29 +23,20 @@ Options are:
     nomenclature, supporting up to Rank 3 (trinomial names)
 }}
 
-\item{quiet}{Logical, default TRUE}
+\item{quiet}{Logical, default TRUE. If FALSE, prints informative messages.}
 }
 \value{
 A tibble with detailed matching results including:
 \describe{
-  \item{Orig.Name}{Original input name}
-  \item{Matched.Name}{Matched name from database}
-  \item{Threat.Status}{IUCN threat category or "Not threatened"}
-  \item{Rank}{Input taxonomic rank (1-4)}
-  \item{Matched.Rank}{Matched taxonomic rank}
-  \item{Comp.Rank}{Logical, whether ranks match exactly}
-  \item{Match.Level}{Description of match quality}
-  \item{matched}{Logical, whether a match was found}
-}
-
-The result also includes metadata attributes:
-\itemize{
-  \item \code{use_infraspecies_2}: Whether Rank 4 is supported
-  \item \code{target_database}: Database used ("original" or "updated")
-  \item \code{matching_date}: Date of matching
-  \item \code{n_input}: Number of input names
-  \item \code{n_matched}: Number of successful matches
-  \item \code{match_rate}: Percentage of successful matches
+  \item{sorter}{Integer. Original position in input vector}
+  \item{Orig.Name}{Character. Original input name (standardized)}
+  \item{Matched.Name}{Character. Matched name from database or "---"}
+  \item{Threat.Status}{Character. IUCN threat category or "Not threatened"}
+  \item{Rank}{Integer. Input taxonomic rank (1-4)}
+  \item{Matched.Rank}{Integer. Matched taxonomic rank}
+  \item{Comp.Rank}{Logical. Whether ranks match exactly}
+  \item{Match.Level}{Character. Description of match quality}
+  \item{matched}{Logical. Whether a match was found}
 }
 }
 \description{
@@ -54,8 +46,18 @@ that includes direct matching, genus-level matching, fuzzy matching, and
 suffix matching to maximize successful matches while maintaining accuracy.
 }
 \details{
-The matching process follows a hierarchical pipeline with robust handling of
-infraspecific ranks at two levels (when supported by the database).
+**Duplicate Handling:**
+When the input contains duplicate names, the function automatically:
+\itemize{
+  \item Detects duplicates and creates a tracking column (sorters)
+  \item Processes only unique names (efficient matching)
+  \item Expands results to restore all original positions
+  \item Preserves original input order via sorter column
+}
+
+The duplicate handling uses a `sorters` column that concatenates all original
+sorter values for duplicate names (e.g., "1 - 3" for a name appearing at
+positions 1 and 3), enabling accurate result expansion.
 
 **Matching Strategy:**
 1. Direct exact matching
@@ -65,14 +67,6 @@ infraspecific ranks at two levels (when supported by the database).
 
 **Rank Validation:**
 The algorithm implements strict rank validation to prevent false positives.
-For example, if a user inputs a trinomial name (Rank 3) but only a binomial
-(Rank 2) exists in the database, the match is rejected.
-
-**Ambiguous Matches:**
-When multiple candidates have identical match scores (string distances), the
-algorithm automatically selects the first match and issues a warning. To
-review ambiguous matches for quality control, use
-\code{\link{get_ambiguous_matches}} on the result object.
 }
 \examples{
 \dontrun{
@@ -80,11 +74,13 @@ review ambiguous matches for quality control, use
 species_list <- c("Cattleya maxima", "Polylepis incana")
 results <- matching_threatenedperu(species_list, source = "original")
 
+# With duplicates
+species_dup <- c("Cattleya maxima", "Polylepis incana", "Cattleya maxima")
+results_dup <- matching_threatenedperu(species_dup)
+nrow(results_dup) == 3  # TRUE - preserves duplicates
+
 # Access metadata
 attr(results, "match_rate")
-
-# Check for ambiguous matches
-ambig <- get_ambiguous_matches(results, type = "all")
 }
 
 }

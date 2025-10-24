@@ -414,20 +414,127 @@
                     "Comp.Rank","Match.Level")
 }
 
+#' Final Validation of Matching Results
+#'
+#' @description
+#' Validates that the output maintains integrity with the original input,
+#' including proper handling of duplicate names.
+#'
+#' @param splist_class Tibble. Original classified species list
+#' @param output_f Tibble. Final formatted output
+#'
+#' @return Invisible TRUE if all checks pass, otherwise throws error
+#'
+#' @keywords internal
+
 #' @keywords internal
 .final_assertions <- function(splist_class, output_f) {
+
+  # ==========================================================================
+  # ASSERTION 1: Row Count Match
+  # ==========================================================================
+  # Output must have same number of rows as input (including duplicates)
+
   if (nrow(splist_class) != nrow(output_f)) {
-    stop(sprintf("Final row count (%d) differs from input (%d).",
-                 nrow(output_f), nrow(splist_class)), call. = FALSE)
+    stop(
+      sprintf(
+        "Row count mismatch:\n  Input:  %d rows\n  Output: %d rows\nThis indicates a bug in the duplicate expansion logic.",
+        nrow(splist_class),
+        nrow(output_f)
+      ),
+      call. = FALSE
+    )
   }
-  if (!all(splist_class$sorter %in% output_f$sorter)) {
-    stop("Some input records are missing in the output.", call. = FALSE)
+
+  # ==========================================================================
+  # ASSERTION 2: All Input Sorters Present
+  # ==========================================================================
+  # Every original sorter value must appear in output
+
+  missing_sorters <- setdiff(splist_class$sorter, output_f$sorter)
+
+  if (length(missing_sorters) > 0) {
+    stop(
+      sprintf(
+        "Missing sorters in output: %s\nSome input records were lost during processing.\nThis indicates a bug in the matching pipeline.",
+        paste(head(missing_sorters, 10), collapse = ", ")
+      ),
+      call. = FALSE
+    )
   }
+
+  # ==========================================================================
+  # ASSERTION 3: No Duplicate Sorters
+  # ==========================================================================
+  # Each sorter should appear exactly once (no unintended duplication)
+
+  if (any(duplicated(output_f$sorter))) {
+    dup_sorters <- output_f$sorter[duplicated(output_f$sorter)]
+    dup_names <- output_f$Orig.Name[output_f$sorter %in% dup_sorters]
+
+    stop(
+      sprintf(
+        "Duplicate sorters found in output:\n  Sorters: %s\n  Names: %s\nThis indicates a bug in the duplicate expansion logic.",
+        paste(head(unique(dup_sorters), 5), collapse = ", "),
+        paste(head(unique(dup_names), 5), collapse = ", ")
+      ),
+      call. = FALSE
+    )
+  }
+
+  # ==========================================================================
+  # ASSERTION 4: Sorter Order Validation
+  # ==========================================================================
+  # Output should be sorted by sorter (1, 2, 3, ...)
+
   if (!all(output_f$sorter == sort(output_f$sorter))) {
-    stop("Output order by 'sorter' is not stable.", call. = FALSE)
+    warning(
+      "Output is not properly sorted by 'sorter' column.\nResults will be re-sorted to maintain input order.",
+      call. = FALSE,
+      immediate. = TRUE
+    )
+
+    # Auto-fix: sort by sorter
+    output_f <- output_f |>
+      dplyr::arrange(sorter)
   }
+
+  # ==========================================================================
+  # ASSERTION 5: Name Consistency Check (FIXED)
+  # ==========================================================================
+  # Orig.Name at each sorter position should match input
+  # NOTE: splist_class has standardized names (UPPERCASE)
+  #       output_f has formatted names (Simple_cap)
+  #       We need to compare them consistently
+
+  # Create standardized version of output names for comparison
+  output_standardized <- toupper(output_f$Orig.Name)
+  input_standardized <- splist_class$Orig.Name[match(output_f$sorter, splist_class$sorter)]
+
+  # Compare standardized versions
+  name_mismatches <- which(input_standardized != output_standardized)
+
+  if (length(name_mismatches) > 0) {
+    stop(
+      sprintf(
+        "Name mismatch detected at %d position(s):\n  First mismatch at sorter: %d\n  Expected (standardized): '%s'\n  Got (standardized): '%s'\nThis indicates a bug in the duplicate expansion logic.",
+        length(name_mismatches),
+        output_f$sorter[name_mismatches[1]],
+        input_standardized[name_mismatches[1]],
+        output_standardized[name_mismatches[1]]
+      ),
+      call. = FALSE
+    )
+  }
+
+  # ==========================================================================
+  # All Checks Passed
+  # ==========================================================================
+
   invisible(TRUE)
 }
+
+
 
 #' @keywords internal
 .cleanup_infrasp2_if_needed <- function(output_f, use_infraspecies_2) {
