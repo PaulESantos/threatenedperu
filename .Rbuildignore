@@ -8,3 +8,4 @@ papers_modelos
 ^threatenedperu_db_syn.txt
 ^data-raw$
 fuzzy_match.R.backup
+r/deprecated.R
