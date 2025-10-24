@@ -12,51 +12,462 @@ knitr::opts_chunk$set(
   out.width = "100%"
 )
 ```
-
-# threatenedperu <a href='https://github.com/PaulESantos/threatenedperu'><img src='man/figures/logo.png' align="right" height="200" width="200" /></a>
+# threatenedperu <img src="man/figures/logo.png" align="right" height="139" />
 
 <!-- badges: start -->
-[![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
+[![Lifecycle: stable](https://img.shields.io/badge/lifecycle-stable-brightgreen.svg)](https://lifecycle.r-lib.org/articles/stages.html#stable)
 [![CRAN status](https://www.r-pkg.org/badges/version/threatenedperu)](https://CRAN.R-project.org/package=threatenedperu)
+[![R-CMD-check](https://github.com/PaulESantos/threatenedperu/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/PaulESantos/threatenedperu/actions/workflows/R-CMD-check.yaml)
+[![Codecov test coverage](https://codecov.io/gh/PaulESantos/threatenedperu/branch/main/graph/badge.svg)](https://app.codecov.io/gh/PaulESantos/threatenedperu?branch=main)
 <!-- badges: end -->
 
 ## Overview
 
-`threatenedperu` provides tools to work with threatened plant species data from Peru as categorized under **Decreto Supremo N° 043-2006-AG**. The package contains data on 777 threatened species distributed across four IUCN threat categories, with sophisticated name matching algorithms that handle taxonomic synonyms and nomenclatural changes since the list where stablished.
+**threatenedperu** provides comprehensive tools for working with Peru's official threatened plant species list as established by Supreme Decree **DS 043-2006-AG** (July 13, 2006). The package enables researchers, conservation practitioners, and environmental consultants to:
+
+- *Validate species protection status** against the official decree
+- **Match species names** with advanced algorithms handling taxonomic changes
+- **Access complete threat data** for 777+ threatened plant species
+- **Handle nomenclatural updates** automatically since 2006
+- **Generate conservation reports** for environmental impact assessments
 
 ## Key Features
 
--  Comprehensive name matching: Direct, fuzzy, and suffix-based matching algorithms
--  Synonym resolution: Automatic handling of nomenclatural changes since 2006
--  Complete threat data: 777 species across CR, EN, VU, and NT categories
--  Validation tools: Check species protection status against official document
--  Conservation workflows: Tools for reports, management plans, and monitoring
+### Intelligent Name Matching
+- **Hierarchical matching pipeline**: Direct → Genus → Fuzzy → Suffix matching
+- **Handles taxonomic complexity**: Supports up to quaternomial names (Rank 4)
+- **Automatic standardization**: Deals with variations in formatting and spelling
+- **Ambiguity detection**: Identifies and reports uncertain matches for manual review
 
-## Legal Framework
+### Dual Database System
+- **Original nomenclature (2006)**: Preserves names as published in DS 043-2006-AG
+- **Updated nomenclature (2025)**: Reflects current taxonomic consensus (WCVP/POWO)
+- **Synonym resolution**: Links historical names to accepted names automatically
+- **Protection continuity**: Legal status maintained regardless of nomenclatural changes
 
-The package implements the official categorization from:
-**Decreto Supremo N° 043-2006-AG (July 13, 2006)** **Aprueban Categorización de Especies Amenazadas de Flora Silvestre**
-
-- Categories (following IUCN criteria):
-
-- CR `(Critically Endangered)`: 
-- EN `(Endangered)`: 
-- VU `(Vulnerable)`: 
-- NT `(Near Threatened)`: 
+### Conservation Applications
+- Environmental impact assessments (EIA)
+- Forest management plans
+- Species monitoring programs
+- Conservation status validation
+- Research on threatened flora
 
 ## Installation
 
-Install from CRAN:
-
+Install the stable version from CRAN:
 ```r
-install.packages("peruflorads43")
-
-# or
-
-pak::pak("peruflorads43")
+install.packages("threatenedperu")
 ```
+
 Or install the development version from GitHub:
+```r
+# Using pak (recommended)
+pak::pak("PaulESantos/threatenedperu")
 
-``` r
-pak::pak("PaulEsantos/peruflorads43")
+# Or using remotes
+remotes::install_github("PaulESantos/threatenedperu")
 ```
+
+## Quick Start
+
+### Basic Usage
+
+Check if species are threatened:
+```r
+library(threatenedperu)
+
+# Simple vector of species names
+species_list <- c(
+  "Cattleya maxima",           # Orchid - Endangered
+  "Polylepis incana",          # Queñua tree - Vulnerable  
+  "Persea americana"           # Avocado - Not threatened
+)
+
+# Check threat status
+threat_status <- is_threatened_peru(species_list)
+threat_status
+#> [1] "Threatened - EN"  "Threatened - VU"  "Not threatened"
+```
+
+### Detailed Matching Results
+
+Get comprehensive matching information:
+```r
+# Detailed results with matching metadata
+results <- is_threatened_peru(species_list, return_details = TRUE)
+
+# View key columns
+results |> 
+  select(Orig.Name, Matched.Name, Threat.Status, Match.Level)
+#> # A tibble: 3 × 4
+#>   Orig.Name         Matched.Name      Threat.Status    Match.Level
+#>   <chr>             <chr>             <chr>            <chr>      
+#> 1 Cattleya maxima   Cattleya maxima   Threatened - EN  Exact rank 
+#> 2 Polylepis incana  Polylepis incana  Threatened - VU  Exact rank 
+#> 3 Persea americana  ---               Not threatened   No match
+```
+
+### DS 043-2006-AG Validation
+
+Check protection status under the official decree:
+```r
+# Species with nomenclatural changes
+species <- c(
+  "Haageocereus acranthus subsp. olowinskianus",  # Original name (2006)
+  "Brassia ocanensis",                            # Updated name (was Ada)
+  "Persea americana"                              # Not threatened
+)
+
+# Consolidated search across both databases
+status <- is_ds043_2006_ag(species)
+status
+#> [1] "Threatened - VU"              "Threatened - EN (updated name)" 
+#> [3] "Not threatened"
+
+# Detailed reconciliation
+details <- is_ds043_2006_ag(species, return_details = TRUE)
+
+details |>
+  select(Input.Name, Consolidated.Status, Final.Source, Nomenclature.Status)
+```
+
+### Handling Fuzzy Matches
+
+The package automatically handles misspellings and variations:
+```r
+# Species with typos
+species_fuzzy <- c(
+  "Catleya maxima",      # Missing 't' in Cattleya
+  "Polylepys incana"     # Wrong spelling of Polylepis
+)
+
+results <- is_threatened_peru(species_fuzzy, return_details = TRUE)
+
+# Check fuzzy matching quality
+results |>
+  select(Orig.Name, Matched.Name, Threat.Status, 
+         fuzzy_genus_dist, fuzzy_match_genus)
+```
+
+### Reviewing Ambiguous Matches
+
+When multiple candidates have identical match scores:
+```r
+# Get ambiguous matches for quality control
+ambiguous <- get_ambiguous_matches(results, type = "all")
+
+# Save for manual curation
+if (!is.null(ambiguous)) {
+  get_ambiguous_matches(
+    results, 
+    type = "genus",
+    save_to_file = TRUE,
+    output_dir = "output/ambiguous_matches"
+  )
+}
+```
+
+## Database Structure
+
+### Original Database (DS 043-2006-AG 2006)
+```r
+# Access original nomenclature
+db_original <- get_threatened_database(type = "original")
+
+# Summary statistics
+get_database_summary("original")
+#> # A tibble: 1 × 10
+#>   Database    Total_Species    CR    EN    VU    NT Families Genera Has_Infraspecies Max_Rank
+#>   <chr>               <int> <int> <int> <int> <int>    <int>  <int>            <int>    <dbl>
+#> 1 Original (…           777   222   204   172   179       77    301              404        4
+```
+
+**Key characteristics:**
+- 777+ species as listed in 2006
+- Supports quaternomial names (Rank 4)
+- Includes both accepted names and synonyms
+- Original infraspecific rank formatting
+
+### Updated Database (Current Nomenclature)
+```r
+# Access updated nomenclature
+db_updated <- get_threatened_database(type = "updated")
+
+# Compare with original
+get_database_summary("both")
+```
+
+**Key characteristics:**
+- Current taxonomic consensus (WCVP/POWO)
+- Supports trinomial names (Rank 3 maximum)
+- Only accepted names (synonyms resolved)
+- Updated to 2025 nomenclature
+
+## Advanced Features
+
+### Comparison Between Databases
+```r
+# Side-by-side comparison
+comparison <- comparison_table_ds043(species)
+
+comparison |>
+  select(input_species, status_original, status_updated, 
+         nomenclature_status, protected_by_ds_043)
+```
+
+### Batch Processing
+```r
+# Read species list from file
+species_file <- read.csv("data/species_list.csv")
+
+# Process in batches for large datasets
+results <- species_file$scientific_name |>
+  is_threatened_peru(return_details = TRUE)
+
+# Export results
+write.csv(results, "output/threat_assessment_results.csv", row.names = FALSE)
+```
+
+### Integration with Conservation Workflows
+```r
+# Filter only threatened species
+threatened_only <- results |>
+  filter(Threat.Status != "Not threatened")
+
+# Count by threat category
+threatened_only |>
+  count(Threat.Status, sort = TRUE)
+
+# Generate summary report
+threatened_only |>
+  group_by(Threat.Status) |>
+  summarise(
+    n_species = n(),
+    examples = paste(head(Matched.Name, 3), collapse = ", ")
+  )
+```
+
+## Legal Framework
+
+**Supreme Decree DS 043-2006-AG**  
+*Aprueban Categorización de Especies Amenazadas de Flora Silvestre*
+
+Issued by: Ministry of Agriculture, Peru  
+Date: July 13, 2006  
+Legal basis: Articles 60°, 61°, 95°, 98° of Ley Forestal y de Fauna Silvestre (Law No. 27308)
+
+### IUCN Threat Categories
+
+| Category | Code | Spanish | Description |
+|----------|------|---------|-------------|
+| Critically Endangered | **CR** | En Peligro Crítico | Extremely high risk of extinction |
+| Endangered | **EN** | En Peligro | Very high risk of extinction |
+| Vulnerable | **VU** | Vulnerable | High risk of extinction |
+| Near Threatened | **NT** | Casi Amenazado | Close to qualifying for threatened status |
+
+## Use Cases
+
+### 1. Environmental Impact Assessment (EIA)
+```r
+# Species list from field survey
+field_species <- c("Species_1", "Species_2", "Species_3", ...)
+
+# Check DS 043 protection status
+eia_results <- is_ds043_2006_ag(field_species, return_details = TRUE)
+
+# Generate EIA report section
+eia_report <- eia_results |>
+  filter(Protected.DS043 == TRUE) |>
+  select(Input.Name, Consolidated.Status, Final.Source)
+
+# Export for EIA documentation
+write.csv(eia_report, "eia_threatened_species_ds043.csv")
+```
+
+### 2. Forest Management Plan
+```r
+# Inventory species from management area
+inventory <- read.csv("forest_inventory.csv")
+
+# Validate against threatened species list
+management_check <- inventory$species_name |>
+  is_threatened_peru(return_details = TRUE)
+
+# Identify species requiring special management
+special_management <- management_check |>
+  filter(Threat.Status %in% c("Threatened - CR", "Threatened - EN"))
+
+# Map threatened species locations
+# (integrate with spatial data)
+```
+
+### 3. Research and Monitoring
+```r
+# Historical species records
+historical_names <- c(
+  "Lycaste locusta",     # Old name
+  "Ida locusta"          # Current accepted name
+)
+
+# Check nomenclatural updates
+nomenclature_check <- is_ds043_2006_ag(
+  historical_names, 
+  return_details = TRUE
+)
+
+# Identify synonyms
+nomenclature_check |>
+  filter(Is.Synonym == TRUE) |>
+  select(Input.Name, Accepted.Name, Nomenclature.Status)
+```
+
+## Algorithm Details
+
+### Hierarchical Matching Pipeline
+
+1. **Direct Match** (Node 1)
+   - Exact matching for full scientific names
+   - Handles binomial, trinomial, and quaternomial names
+   - Fastest and most reliable method
+
+2. **Genus Match** (Nodes 2-3)
+   - Exact genus matching
+   - Fuzzy genus matching (Levenshtein distance ≤ 1)
+   - Foundation for species-level matching
+
+3. **Species Match** (Nodes 4-5)
+   - Direct species epithet matching within genus
+   - Suffix matching (handles Latin name variations: -a, -i, -is, -um, -us, -ae)
+   - Fuzzy species matching (Levenshtein distance ≤ 1)
+
+4. **Infraspecies Match** (Nodes 6-7)
+   - Direct infraspecific rank matching (SUBSP., VAR., F., etc.)
+   - Fuzzy infraspecific epithet matching
+   - Support for two-level infraspecies (Rank 4, original database only)
+
+### Rank Validation
+
+The algorithm implements **strict rank validation** to prevent false positives:
+```r
+# Example: User inputs trinomial, database has binomial
+# Input:  "Cattleya maxima var. alba" (Rank 3, doesn't exist)
+# Database: "Cattleya maxima" (Rank 2, exists)
+# Result: NO MATCH (correct) - prevents false positive
+```
+
+This ensures taxonomic precision and avoids inappropriate matches.
+
+## Performance Considerations
+
+### Handling Large Datasets
+```r
+# For >1000 species, consider batch processing
+large_species_list <- read.csv("large_dataset.csv")
+
+# Process in chunks
+chunk_size <- 500
+n_chunks <- ceiling(nrow(large_species_list) / chunk_size)
+
+results_list <- lapply(1:n_chunks, function(i) {
+  start <- (i - 1) * chunk_size + 1
+  end <- min(i * chunk_size, nrow(large_species_list))
+  
+  chunk_species <- large_species_list$species_name[start:end]
+  is_threatened_peru(chunk_species, return_details = TRUE)
+})
+
+# Combine results
+final_results <- bind_rows(results_list)
+```
+
+### Duplicate Handling
+
+The package automatically handles duplicate names efficiently:
+```r
+# Input with duplicates
+species_dup <- c(
+  "Cattleya maxima", 
+  "Polylepis incana", 
+  "Cattleya maxima"  # Duplicate
+)
+
+results <- matching_threatenedperu(species_dup)
+
+# Output preserves all duplicates
+nrow(results) == 3  # TRUE
+
+# But matching is done only once per unique name (efficient)
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**1. No matches found for valid species**
+```r
+# Check if species is actually threatened
+results <- is_threatened_peru("Persea americana", return_details = TRUE)
+
+# Review matching process
+results |> select(Orig.Name, direct_match, genus_match, matched)
+```
+
+**2. Ambiguous matches detected**
+```r
+# Review ambiguous matches
+ambiguous <- get_ambiguous_matches(results, type = "genus")
+
+# Save for manual curation
+get_ambiguous_matches(results, save_to_file = TRUE)
+```
+
+**3. Rank mismatch warnings**
+```r
+# Input: "Cattleya maxima var. alba" (Rank 3, doesn't exist)
+# Database: "Cattleya maxima" (Rank 2, exists)
+# Result: Warning about rank mismatch
+
+# Check rank validation
+results |> select(Orig.Name, Rank, Matched.Rank, Comp.Rank, Match.Level)
+```
+
+## Citation
+
+If you use **threatenedperu** in your research, please cite:
+```r
+citation("threatenedperu")
+```
+```bibtex
+@Manual{threatenedperu2025,
+  title = {threatenedperu: Check Threatened Plant Species Status Against Peru's DS 043-2006-AG},
+  author = {Paul E. Santos Andrade},
+  year = {2025},
+  note = {R package version 0.1.1},
+  url = {https://github.com/PaulESantos/threatenedperu},
+}
+```
+
+**Legal reference:**
+
+Ministerio de Agricultura. (2006). Decreto Supremo N° 043-2006-AG: Aprueban Categorización de Especies Amenazadas de Flora Silvestre. El Peruano, July 13, 2006.
+
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+### Reporting Issues
+
+- **Taxonomic issues**: Report incorrect matches or missing species
+- **Bug reports**: Use GitHub Issues with reproducible examples
+- **Feature requests**: Suggest new functionality
+- **Documentation**: Help improve examples and vignettes
+
+
+## Acknowledgments
+
+- **SERFOR** (Servicio Nacional Forestal y de Fauna Silvestre) for the original DS 043-2006-AG data
+- **Royal Botanic Gardens, Kew** for WCVP and POWO taxonomic resources
+
+---
+
+**Disclaimer**: This package implements DS 043-2006-AG for research and conservation purposes. For official legal determinations, consult the original decree and relevant Peruvian authorities.
