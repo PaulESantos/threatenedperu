@@ -289,17 +289,40 @@ direct_match <- function(df,
 
   } else {
     # When not using infraspecies_2, combine unmatched from Rank 2 and 3
-    unmatched <- df |>
+    unmatched_bino <- df |>
+      dplyr::filter(Rank == 2) |>
+      dplyr::anti_join(
+        target_prepared,
+        by = c('Orig.Genus' = 'genus', 'Orig.Species' = 'species')
+      )
+
+    # Unmatched Rank 3: Infraspecies level 1 that didn't match
+    unmatched_infra_1 <- df |>
+      dplyr::filter(Rank == 3) |>
       dplyr::anti_join(
         target_prepared,
         by = c(
           'Orig.Genus' = 'genus',
           'Orig.Species' = 'species',
-          'Orig.Infra.Rank' = 'tag',
+          'Orig.Infra.Rank' = 'tag_acc',
           'Orig.Infraspecies' = 'infraspecies'
         )
-      ) |>
-      dplyr::filter(!sorter %in% matched$sorter)
+      )
+    unmatched <- dplyr::bind_rows(
+      unmatched_bino,
+      unmatched_infra_1
+    )
+    #unmatched <- df |>
+    #  dplyr::anti_join(
+    #    target_prepared,
+    #    by = c(
+    #      'Orig.Genus' = 'genus',
+    #      'Orig.Species' = 'species',
+    #      'Orig.Infra.Rank' = 'tag',#'tag_acc',
+    #      'Orig.Infraspecies' = 'infraspecies'
+    #    )
+    #  ) |>
+    #  dplyr::filter(!sorter %in% matched$sorter)
   }
 
   # ==========================================================================
@@ -374,6 +397,7 @@ genus_match <- function(df, target_df = NULL){
       return(df)
     }
   }
+
   matched <-
    df |>
     dplyr::semi_join( target_df,
@@ -429,17 +453,20 @@ direct_match_species_within_genus_helper <- function(df, target_df){
     dplyr::semi_join(database_subset,
                      by = c('Orig.Species' = 'species')) |>
     dplyr::mutate(Matched.Species = Orig.Species)
-#matched |> as.data.frame()
+
+
   unmatched <- df |>
     dplyr::anti_join(database_subset,
                      by = c('Orig.Species' = 'species'))
-#unmatched |> as.data.frame()
+
+
   assertthat::assert_that(nrow(df) == (nrow(matched) + nrow(unmatched)))
 
   # combine matched and unmatched and add Boolean indicator: TRUE = matched, FALSE = unmatched
   combined <-  dplyr::bind_rows(matched, unmatched,
                                 .id = 'direct_match_species_within_genus') |>
-    dplyr::mutate(direct_match_species_within_genus = (direct_match_species_within_genus == 1)) |>  ## convert to Boolean
+    dplyr::mutate(direct_match_species_within_genus =
+                    (direct_match_species_within_genus == 1)) |>  ## convert to Boolean
     dplyr::relocate(c('Orig.Genus',
                       'Orig.Species',
                       'Orig.Infraspecies')) ## Genus & Species column at the beginning of tibble

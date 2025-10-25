@@ -1,0 +1,163 @@
+---
+title: "Reporte de funcionalidad del paquete threatenedperu"
+author: "Equipo threatenedperu"
+output: rmarkdown::html_vignette
+lang: es
+vignette: >
+  %\VignetteIndexEntry{Reporte de funcionalidad del paquete threatenedperu}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+## Resumen ejecutivo
+
+Este reporte describe la funcionalidad principal del paquete **threatenedperu**,
+una herramienta diseñada para verificar el estatus de amenaza de especies
+vegetales del Perú de acuerdo con el Decreto Supremo 043-2006-AG y las
+actualizaciones taxonómicas provistas por recursos especializados. El documento
+sirve como base técnica para la elaboración de un artículo científico u otra
+pieza de divulgación que requiera sustento metodológico sólido.
+
+## Contexto normativo y taxonómico
+
+El paquete implementa la lista oficial de especies amenazadas de flora silvestre
+publicada por el Ministerio de Agricultura del Perú mediante el Decreto Supremo
+043-2006-AG, que establece las categorías de amenaza y el marco legal vigente
+para la conservación de estas especies. [[@DS0432006AG]] Asimismo, integra
+actualizaciones nomenclaturales provenientes del **World Checklist of Vascular
+Plants** y de **Plants of the World Online**, garantizando la trazabilidad entre
+los nombres originales y los aceptados actualmente. [[@WCVP2024; @POWO2024]]
+
+## Estructura general del paquete
+
+El paquete está organizado en torno a tres componentes funcionales:
+
+1. **Acceso a bases de datos**: Funciones como `get_threatened_database()` y
+   `get_database_summary()` permiten descargar y resumir la información de la
+   lista oficial y de la base taxonómica actualizada.
+2. **Motor de emparejamiento**: La tubería de coincidencia (`matching_threatenedperu()`)
+   integra estrategias secuenciales de coincidencia exacta, por género, difusa y
+   por sufijos para resolver variantes ortográficas y actualizaciones taxonómicas.
+3. **Funciones de reporte**: Utilidades como `is_threatened_peru()` e
+   `is_ds043_2006_ag()` generan salidas directas para la validación del estatus de
+   amenaza y el seguimiento de decisiones durante el proceso de emparejamiento.
+
+## Flujo de trabajo recomendado
+
+La Figura 1 describe el flujo de trabajo conceptual que sigue el paquete:
+
+1. Normalización de nombres científicos y eliminación de inconsistencias comunes
+   (espacios dobles, caracteres especiales, mayúsculas/minúsculas).
+2. Evaluación jerárquica de coincidencias comenzando por el emparejamiento
+   directo (`direct_match()`), seguido por coincidencias a nivel de género
+   (`genus_match()`), coincidencias difusas (`fuzzy_match_genus()` y funciones
+   auxiliares) y coincidencias por sufijo (`sufijo_match.R`).
+3. Consolidación de resultados y etiquetado de ambigüedades mediante
+   `get_ambiguous_matches()` para revisión manual cuando sea necesario.
+4. Generación de reportes finales con categorías de amenaza y metadatos que
+   registran la fuente de cada coincidencia y la calidad del emparejamiento.
+
+```{r, eval = FALSE}
+library(threatenedperu)
+
+# Ejemplo reproducible del flujo de trabajo
+taxa <- c(
+  "Cattleya maxima",                      # Coincidencia exacta
+  "Polylepys incana",                    # Coincidencia difusa
+  "Haageocereus acranthus subsp. olowinskianus" # Conciliación nomenclatural
+)
+
+resultado <- matching_threatenedperu(taxa)
+
+resultado |>
+  dplyr::select(
+    Orig.Name,
+    Matched.Name,
+    Threat.Status,
+    Match.Level,
+    Final.Source
+  )
+```
+
+## Casos de uso clave
+
+### Evaluaciones de impacto ambiental
+
+Los consultores ambientales pueden verificar rápidamente si las especies
+registradas en inventarios de campo se encuentran protegidas, generando tablas
+resumidas que pueden anexarse a informes técnicos. Las funciones de coincidencia
+jerárquica reducen el esfuerzo de validación manual y documentan el tipo de
+coincidencia logrado para cada registro.
+
+### Gestión de colecciones botánicas
+
+Los herbarios y bancos de germoplasma pueden integrar el paquete en sus flujos
+para actualizar la nomenclatura de etiquetas históricas. La capacidad de enlazar
+nombres originales con nomenclatura aceptada facilita la depuración de catálogos
+y la comunicación con autoridades regulatorias.
+
+### Investigación académica
+
+Investigadores interesados en tendencias de conservación pueden usar el paquete
+para cruzar grandes bases de datos de ocurrencias (por ejemplo, GBIF) y generar
+indicadores de riesgo para grupos taxonómicos específicos. El diseño vectorizado
+permite procesar miles de nombres en pocos pasos, lo que favorece análisis
+estadísticos reproducibles.
+
+## Integración con otras herramientas
+
+El paquete expone datos en formato `tibble`, lo que facilita su integración con
+el ecosistema `tidyverse`. Además, las funciones son compatibles con flujos de
+trabajo reproducibles en `rmarkdown`, `targets` o `drake`, permitiendo automatizar
+análisis periódicos o pipelines de monitoreo.
+
+```{r, eval = FALSE}
+# Ejemplo de integración con tidyverse
+detalles <- is_threatened_peru(taxa, return_details = TRUE)
+
+# Identificar especies sin coincidencias
+sin_match <- detalles |>
+  dplyr::filter(Match.Level == "No match") |>
+  dplyr::pull(Orig.Name)
+```
+
+## Consideraciones de calidad de datos
+
+- **Ambigüedad taxonómica**: Las funciones reportan empates en puntuaciones de
+  coincidencia y solicitan revisión manual para evitar asignaciones erróneas.
+- **Rangos infraespecíficos**: Se implementan verificaciones específicas para
+  nombres trinómicos y cuaternómicos, asegurando la correspondencia correcta de
+  categorías infraespecíficas.
+- **Persistencia de actualizaciones**: Las bases de datos empaquetadas se
+  actualizan periódicamente para reflejar cambios taxonómicos recientes sin perder
+  el vínculo con el decreto original.
+
+## Recomendaciones para un artículo científico
+
+Al redactar un artículo basado en este paquete se sugiere:
+
+1. Presentar el contexto legal y las fuentes taxonómicas utilizando las
+   referencias oficiales incluidas en este reporte.
+2. Describir el flujo de emparejamiento resaltando la combinación de métodos
+   determinísticos y probabilísticos que minimizan errores de identificación.
+3. Documentar estudios de caso o análisis de sensibilidad que ilustren la
+   utilidad del paquete en escenarios reales (inventarios forestales, monitoreo
+   comunitario, etc.).
+4. Incluir cuadros o figuras generados con `ggplot2` o `gt` que destaquen métricas
+   de cobertura, tasas de coincidencia y categorías de amenaza.
+
+## Conclusiones
+
+**threatenedperu** ofrece una infraestructura completa para evaluar el estatus de
+amenaza de la flora peruana combinando normativas nacionales con fuentes
+internacionales de taxonomía. Su enfoque reproducible y extensible facilita la
+creación de productos científicos y técnicos alineados con las mejores prácticas
+de conservación.
