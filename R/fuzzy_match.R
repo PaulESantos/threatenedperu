@@ -315,6 +315,7 @@ fuzzy_match_species_within_genus_helper <- function(df, target_df) {
                       'Orig.Species',
                       'Orig.Infraspecies'))
 
+  # ⭐ FIX 1: Preserve attribute after bind_rows()
   if (!is.null(attr(matched_final, "ambiguous_species"))) {
     attr(combined, "ambiguous_species") <- attr(matched_final, "ambiguous_species")
   }
@@ -528,6 +529,7 @@ fuzzy_match_infraspecies_within_species_helper <- function(df,
     dplyr::relocate(c('Orig.Genus', 'Orig.Species', 'Orig.Infraspecies',
                       'Orig.Infra.Rank', 'Orig.Infraspecies_2'))
 
+  # ⭐ FIX 2: Preserve attribute after bind_rows()
   if (!is.null(attr(matched_final, "ambiguous_infraspecies"))) {
     attr(combined, "ambiguous_infraspecies") <- attr(matched_final, "ambiguous_infraspecies")
   }
@@ -698,6 +700,7 @@ fuzzy_match_infraspecies2_within_infraspecies_helper <- function(df, target_df) 
                       'Orig.Infraspecies',
                       'Orig.Infraspecies_2'))
 
+  # ⭐ FIX 3: Preserve attribute after bind_rows()
   if (!is.null(attr(matched_final, "ambiguous_infraspecies_2"))) {
     attr(combined, "ambiguous_infraspecies_2") <- attr(matched_final, "ambiguous_infraspecies_2")
   }

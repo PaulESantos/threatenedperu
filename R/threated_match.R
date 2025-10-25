@@ -1,6 +1,3 @@
-# ==============================================================================
-# MATCHING PIPELINE - Main Orchestrator
-# ==============================================================================
 #' Match Species Names to Threatened Plant List of Peru
 #'
 #' @description
@@ -76,6 +73,9 @@
 #'
 #' # Access metadata
 #' attr(results, "match_rate")
+#'
+#' # Check for ambiguous matches
+#' get_ambiguous_matches(results, type = "infraspecies")
 #' }
 #'
 #' @export
@@ -192,6 +192,41 @@ matching_threatenedperu <- function(splist,
   # Nodes 6-7: Infraspecies-level matching
   infra_out <- .pipeline_nodes_6_7(lists, target_prepared, source, use_infraspecies_2)
 
+  # ⭐⭐⭐ FIX 1: BACKUP ambiguous attributes immediately after matching ⭐⭐⭐
+  # ===========================================================================
+  # CRÍTICO: Capturar atributos ANTES de que se pierdan en transformaciones
+  # ===========================================================================
+  ambig_attrs_backup <- list(
+    genera = NULL,
+    species = NULL,
+    infraspecies = NULL,
+    infraspecies_2 = NULL
+  )
+
+  # Capturar del pipeline 1-5 (genus y species)
+  if (!is.null(attr(pipe_1_5$n3_true, "ambiguous_genera"))) {
+    ambig_attrs_backup$genera <- attr(pipe_1_5$n3_true, "ambiguous_genera")
+  }
+  if (!is.null(attr(pipe_1_5$n3_false, "ambiguous_genera"))) {
+    ambig_attrs_backup$genera <- attr(pipe_1_5$n3_false, "ambiguous_genera")
+  }
+
+  if (!is.null(attr(pipe_1_5$n5b_true, "ambiguous_species"))) {
+    ambig_attrs_backup$species <- attr(pipe_1_5$n5b_true, "ambiguous_species")
+  }
+  if (!is.null(attr(pipe_1_5$n5b_false, "ambiguous_species"))) {
+    ambig_attrs_backup$species <- attr(pipe_1_5$n5b_false, "ambiguous_species")
+  }
+
+  # Capturar del infraspecies output
+  if (!is.null(attr(infra_out$res, "ambiguous_infraspecies"))) {
+    ambig_attrs_backup$infraspecies <- attr(infra_out$res, "ambiguous_infraspecies")
+  }
+
+  if (!is.null(attr(infra_out$res, "ambiguous_infraspecies_2"))) {
+    ambig_attrs_backup$infraspecies_2 <- attr(infra_out$res, "ambiguous_infraspecies_2")
+  }
+
   # ==========================================================================
   # SECTION 6: Join Threat Status and Format Results
   # ==========================================================================
@@ -210,6 +245,34 @@ matching_threatenedperu <- function(splist,
 
   # Format matched names and threat status
   output_f <- .finalize_output(res_complete, use_infraspecies_2)
+
+  # ⭐⭐⭐ FIX 2: RESTORE attributes after .finalize_output() ⭐⭐⭐
+  # ===========================================================================
+  # CRÍTICO: Restaurar atributos después de las transformaciones
+  # ===========================================================================
+  if (!is.null(ambig_attrs_backup$genera) &&
+      is.data.frame(ambig_attrs_backup$genera) &&
+      nrow(ambig_attrs_backup$genera) > 0) {
+    attr(output_f, "ambiguous_genera") <- ambig_attrs_backup$genera
+  }
+
+  if (!is.null(ambig_attrs_backup$species) &&
+      is.data.frame(ambig_attrs_backup$species) &&
+      nrow(ambig_attrs_backup$species) > 0) {
+    attr(output_f, "ambiguous_species") <- ambig_attrs_backup$species
+  }
+
+  if (!is.null(ambig_attrs_backup$infraspecies) &&
+      is.data.frame(ambig_attrs_backup$infraspecies) &&
+      nrow(ambig_attrs_backup$infraspecies) > 0) {
+    attr(output_f, "ambiguous_infraspecies") <- ambig_attrs_backup$infraspecies
+  }
+
+  if (!is.null(ambig_attrs_backup$infraspecies_2) &&
+      is.data.frame(ambig_attrs_backup$infraspecies_2) &&
+      nrow(ambig_attrs_backup$infraspecies_2) > 0) {
+    attr(output_f, "ambiguous_infraspecies_2") <- ambig_attrs_backup$infraspecies_2
+  }
 
   # ==========================================================================
   # SECTION 7: Expand Duplicates Back to Original Input
@@ -247,6 +310,34 @@ matching_threatenedperu <- function(splist,
       # Sort by original input order
       dplyr::arrange(sorter)
 
+    # ⭐⭐⭐ FIX 3: RESTORE attributes after duplicate expansion ⭐⭐⭐
+    # =========================================================================
+    # CRÍTICO: Preservar atributos después de expansión de duplicados
+    # =========================================================================
+    if (!is.null(ambig_attrs_backup$genera) &&
+        is.data.frame(ambig_attrs_backup$genera) &&
+        nrow(ambig_attrs_backup$genera) > 0) {
+      attr(output_f_expanded, "ambiguous_genera") <- ambig_attrs_backup$genera
+    }
+
+    if (!is.null(ambig_attrs_backup$species) &&
+        is.data.frame(ambig_attrs_backup$species) &&
+        nrow(ambig_attrs_backup$species) > 0) {
+      attr(output_f_expanded, "ambiguous_species") <- ambig_attrs_backup$species
+    }
+
+    if (!is.null(ambig_attrs_backup$infraspecies) &&
+        is.data.frame(ambig_attrs_backup$infraspecies) &&
+        nrow(ambig_attrs_backup$infraspecies) > 0) {
+      attr(output_f_expanded, "ambiguous_infraspecies") <- ambig_attrs_backup$infraspecies
+    }
+
+    if (!is.null(ambig_attrs_backup$infraspecies_2) &&
+        is.data.frame(ambig_attrs_backup$infraspecies_2) &&
+        nrow(ambig_attrs_backup$infraspecies_2) > 0) {
+      attr(output_f_expanded, "ambiguous_infraspecies_2") <- ambig_attrs_backup$infraspecies_2
+    }
+
     # Replace with expanded output
     output_f <- output_f_expanded
 
@@ -266,11 +357,11 @@ matching_threatenedperu <- function(splist,
   output_f <- .cleanup_infrasp2_if_needed(output_f, use_infraspecies_2)
 
   # ==========================================================================
-  # SECTION 9: Consolidate Ambiguous Match Attributes
+  # SECTION 9: Consolidate Ambiguous Match Attributes (OPTIONAL - for backup)
   # ==========================================================================
-  # CRÍTICO: Preservar atributos antes de que se pierdan
-
-  output_f <- .consolidate_ambiguous_attrs(output_f, pipe_1_5, infra_out)
+  # Ya no es necesario porque hicimos backup/restore manual arriba
+  # Pero dejamos este código comentado por si acaso
+  # output_f <- .consolidate_ambiguous_attrs(output_f, pipe_1_5, infra_out)
 
   # ==========================================================================
   # SECTION 10: Attach Final Metadata and Return
@@ -283,7 +374,5 @@ matching_threatenedperu <- function(splist,
     n_input = nrow(splist_class),
     n_matched = sum(output_f$matched, na.rm = TRUE)
   )
-
 }
-
 

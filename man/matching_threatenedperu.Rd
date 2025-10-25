@@ -81,6 +81,9 @@ nrow(results_dup) == 3  # TRUE - preserves duplicates
 
 # Access metadata
 attr(results, "match_rate")
+
+# Check for ambiguous matches
+get_ambiguous_matches(results, type = "infraspecies")
 }
 
 }

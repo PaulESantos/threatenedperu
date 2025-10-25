@@ -364,7 +364,6 @@
   )
   if (!use_infraspecies_2 && any(out$Matched.Rank == 4L, na.rm = TRUE)) {
     warning("Rank 4 matches detected with a dataset that does not support infraspecies_2; correcting to NA.", call. = FALSE)
-    #warning("Se detectaron matches Rank 4 con base sin infraspecies_2; corrigiendo a NA.", call. = FALSE)
     out$Matched.Rank[out$Matched.Rank == 4L] <- NA_integer_
     out$Matched.Infraspecies_2[which(out$Matched.Rank == 4L)] <- NA_character_
   }
