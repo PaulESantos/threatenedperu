@@ -265,6 +265,17 @@ matching_threatenedperu <- function(splist,
   .final_assertions(splist_class, output_f)
   output_f <- .cleanup_infrasp2_if_needed(output_f, use_infraspecies_2)
 
+  # ==========================================================================
+  # SECTION 9: Consolidate Ambiguous Match Attributes
+  # ==========================================================================
+  # CRÍTICO: Preservar atributos antes de que se pierdan
+
+  output_f <- .consolidate_ambiguous_attrs(output_f, pipe_1_5, infra_out)
+
+  # ==========================================================================
+  # SECTION 10: Attach Final Metadata and Return
+  # ==========================================================================
+
   .attach_metadata(
     output_f,
     use_infraspecies_2,
@@ -272,11 +283,7 @@ matching_threatenedperu <- function(splist,
     n_input = nrow(splist_class),
     n_matched = sum(output_f$matched, na.rm = TRUE)
   )
+
 }
-
-
-
-
-
 
 

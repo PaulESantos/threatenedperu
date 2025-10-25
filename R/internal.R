@@ -658,8 +658,106 @@ get_ambiguous_matches <- function(match_result,
 }
 
 
+#' Consolidate Ambiguous Match Attributes
+#'
+#' @description
+#' Collects ambiguous match attributes from intermediate pipeline results
+#' and attaches them to the final output. This ensures that ambiguous match
+#' information created during fuzzy matching is preserved through all
+#' transformations and available to the user via get_ambiguous_matches().
+#'
+#' @param output_f Final output tibble from the matching pipeline
+#' @param pipe_1_5 List containing results from nodes 1-5 (genus/species matching)
+#' @param infra_out List containing results from nodes 6-7 (infraspecies matching)
+#'
+#' @return output_f with attached ambiguous match attributes:
+#'   - attr(*, "ambiguous_genera")
+#'   - attr(*, "ambiguous_species")
+#'   - attr(*, "ambiguous_infraspecies")
+#'
+#' @details
+#' This function solves the problem of attributes being lost during dplyr
+#' transformations (left_join, mutate, bind_rows, etc.). It retrieves
+#' attributes created in earlier stages of the pipeline and re-attaches
+#' them to the final output.
+#'
+#' @keywords internal
+.consolidate_ambiguous_attrs <- function(output_f, pipe_1_5, infra_out) {
 
-# ---------------------------------------------------------------
+  # ==========================================================================
+  # SECTION 1: Collect Genus-Level Ambiguous Matches
+  # ==========================================================================
+  # From Node 3 (fuzzy_match_genus)
+  # Check both TRUE and FALSE branches since attributes might be on either
+
+  ambig_genera <- attr(pipe_1_5$n3_true, "ambiguous_genera")
+
+  if (is.null(ambig_genera)) {
+    ambig_genera <- attr(pipe_1_5$n3_false, "ambiguous_genera")
+  }
+
+  # ==========================================================================
+  # SECTION 2: Collect Species-Level Ambiguous Matches
+  # ==========================================================================
+  # From Node 5b (fuzzy_match_species_within_genus)
+
+  ambig_species <- attr(pipe_1_5$n5b_true, "ambiguous_species")
+
+  if (is.null(ambig_species)) {
+    ambig_species <- attr(pipe_1_5$n5b_false, "ambiguous_species")
+  }
+
+  # ==========================================================================
+  # SECTION 3: Collect Infraspecies-Level Ambiguous Matches
+  # ==========================================================================
+  # From Nodes 6-7 (fuzzy_match_infraspecies_within_species)
+
+  ambig_infrasp <- attr(infra_out$res, "ambiguous_infraspecies")
+  ambig_infrasp2 <- attr(infra_out$res, "ambiguous_infraspecies_2")
+
+  # ==========================================================================
+  # SECTION 4: Attach Non-NULL Attributes to Output
+  # ==========================================================================
+
+  # Genus-level ambiguous matches
+  if (!is.null(ambig_genera) && nrow(ambig_genera) > 0) {
+    attr(output_f, "ambiguous_genera") <- ambig_genera
+  }
+
+  # Species-level ambiguous matches
+  if (!is.null(ambig_species) && nrow(ambig_species) > 0) {
+    attr(output_f, "ambiguous_species") <- ambig_species
+  }
+
+  # Infraspecies-level ambiguous matches (levels 1 and 2)
+  # If both exist, consolidate them into a single attribute
+  if (!is.null(ambig_infrasp) && nrow(ambig_infrasp) > 0) {
+
+    if (!is.null(ambig_infrasp2) && nrow(ambig_infrasp2) > 0) {
+      # Both level 1 and level 2 exist - combine them
+      attr(output_f, "ambiguous_infraspecies") <- dplyr::bind_rows(
+        ambig_infrasp,
+        ambig_infrasp2
+      )
+    } else {
+      # Only level 1 exists
+      attr(output_f, "ambiguous_infraspecies") <- ambig_infrasp
+    }
+
+  } else if (!is.null(ambig_infrasp2) && nrow(ambig_infrasp2) > 0) {
+    # Only level 2 exists (rare case)
+    attr(output_f, "ambiguous_infraspecies") <- ambig_infrasp2
+  }
+
+  # ==========================================================================
+  # SECTION 5: Return Output with Preserved Attributes
+  # ==========================================================================
+
+  return(output_f)
+}
+
+
+
 # ---------------------------------------------------------------
 utils::globalVariables(c(
   # ============================================================

@@ -176,6 +176,7 @@ fuzzy_match_genus <- function(df, target_df = NULL) {
 #' @seealso \code{\link{get_ambiguous_matches}} to retrieve ambiguous match details
 #'
 #' @keywords internal
+
 fuzzy_match_species_within_genus <- function(df, target_df = NULL) {
 
   assertthat::assert_that(all(c('Orig.Genus',
@@ -203,30 +204,43 @@ fuzzy_match_species_within_genus <- function(df, target_df = NULL) {
     dplyr::group_by(Matched.Genus) |>
     dplyr::group_split()
 
-  res <- map_dfr_progress(res_list,
-                          fuzzy_match_species_within_genus_helper,
-                          target_df) |>
+  # =========================================================================
+  # CRÍTICO: Capturar atributos ANTES de bind_rows()
+  # =========================================================================
+
+  res_with_attrs <- lapply(res_list, function(chunk) {
+    fuzzy_match_species_within_genus_helper(chunk, target_df)
+  })
+
+  # Extraer atributos
+  all_ambiguous <- lapply(res_with_attrs, function(chunk_result) {
+    attr(chunk_result, "ambiguous_species")
+  })
+
+  all_ambiguous <- Filter(Negate(is.null), all_ambiguous)
+
+  consolidated_ambiguous <- if (length(all_ambiguous) > 0) {
+    dplyr::bind_rows(all_ambiguous)
+  } else {
+    NULL
+  }
+
+  # Combinar resultados
+  res <- dplyr::bind_rows(res_with_attrs) |>
     dplyr::relocate(c('Orig.Genus',
                       'Orig.Species',
                       'Orig.Infraspecies'))
 
-  # Consolidate ambiguous species attributes from all groups
-  all_ambiguous_species <- lapply(seq_along(res_list), function(i) {
-    genus <- unique(res_list[[i]]$Matched.Genus)
-    group_res <- res[res$Matched.Genus == genus, ]
-    attr(group_res, "ambiguous_species")
-  })
-
-  all_ambiguous_species <- dplyr::bind_rows(
-    Filter(Negate(is.null), all_ambiguous_species)
-  )
-
-  if (nrow(all_ambiguous_species) > 0) {
-    attr(res, "ambiguous_species") <- all_ambiguous_species
+  # Re-adjuntar atributo consolidado
+  if (!is.null(consolidated_ambiguous) && nrow(consolidated_ambiguous) > 0) {
+    attr(res, "ambiguous_species") <- consolidated_ambiguous
   }
 
   return(res)
 }
+
+
+
 
 
 #' Fuzzy Match Species within Genus - Helper
@@ -357,35 +371,43 @@ fuzzy_match_infraspecies_within_species <- function(df,
     dplyr::group_by(Matched.Species) |>
     dplyr::group_split()
 
-  res <- map_dfr_progress(
-    res_list,
-    fuzzy_match_infraspecies_within_species_helper,
-    target_df,
-    source = source
-  ) |>
+  # =========================================================================
+  # CRÍTICO: Capturar atributos de cada chunk ANTES de bind_rows()
+  # =========================================================================
+
+  res_with_attrs <- lapply(res_list, function(chunk) {
+    fuzzy_match_infraspecies_within_species_helper(chunk, target_df, source = source)
+  })
+
+  # Extraer todos los atributos "ambiguous_infraspecies" de cada chunk
+  all_ambiguous <- lapply(res_with_attrs, function(chunk_result) {
+    attr(chunk_result, "ambiguous_infraspecies")
+  })
+
+  # Filtrar NULLs
+  all_ambiguous <- Filter(Negate(is.null), all_ambiguous)
+
+  # Combinar todos los atributos en un solo data frame
+  consolidated_ambiguous <- if (length(all_ambiguous) > 0) {
+    dplyr::bind_rows(all_ambiguous)
+  } else {
+    NULL
+  }
+
+  # Ahora sí hacer bind_rows() de los resultados
+  res <- dplyr::bind_rows(res_with_attrs) |>
     dplyr::relocate(c(
       'Orig.Genus', 'Orig.Species', 'Orig.Infra.Rank',
       'Orig.Infraspecies', 'Orig.Infraspecies_2'
     ))
 
-  # Consolidate ambiguous infraspecies attributes
-  all_ambiguous_infraspecies <- lapply(seq_along(res_list), function(i) {
-    species <- unique(res_list[[i]]$Matched.Species)
-    group_res <- res[res$Matched.Species == species, ]
-    attr(group_res, "ambiguous_infraspecies")
-  })
-
-  all_ambiguous_infraspecies <- dplyr::bind_rows(
-    Filter(Negate(is.null), all_ambiguous_infraspecies)
-  )
-
-  if (nrow(all_ambiguous_infraspecies) > 0) {
-    attr(res, "ambiguous_infraspecies") <- all_ambiguous_infraspecies
+  # CRÍTICO: Re-adjuntar el atributo consolidado
+  if (!is.null(consolidated_ambiguous) && nrow(consolidated_ambiguous) > 0) {
+    attr(res, "ambiguous_infraspecies") <- consolidated_ambiguous
   }
 
   return(res)
 }
-
 
 #' Helper: Fuzzy Match Infraspecific Epithet within Species
 #' @keywords internal
@@ -546,23 +568,33 @@ fuzzy_match_infraspecies2_within_infraspecies <- function(df, target_df = NULL) 
     dplyr::group_by(Matched.Infraspecies) |>
     dplyr::group_split()
 
-  res <- map_dfr_progress(res_list,
-                          fuzzy_match_infraspecies2_within_infraspecies_helper,
-                          target_df)
+  # =========================================================================
+  # CRÍTICO: Capturar atributos ANTES de bind_rows()
+  # =========================================================================
 
-  # Consolidate ambiguous infraspecies 2 attributes
-  all_ambiguous_infrasp2 <- lapply(seq_along(res_list), function(i) {
-    infrasp1 <- unique(res_list[[i]]$Matched.Infraspecies)
-    group_res <- res[res$Matched.Infraspecies == infrasp1, ]
-    attr(group_res, "ambiguous_infraspecies_2")
+  res_with_attrs <- lapply(res_list, function(chunk) {
+    fuzzy_match_infraspecies2_within_infraspecies_helper(chunk, target_df)
   })
 
-  all_ambiguous_infrasp2 <- dplyr::bind_rows(
-    Filter(Negate(is.null), all_ambiguous_infrasp2)
-  )
+  # Extraer atributos
+  all_ambiguous <- lapply(res_with_attrs, function(chunk_result) {
+    attr(chunk_result, "ambiguous_infraspecies_2")
+  })
 
-  if (nrow(all_ambiguous_infrasp2) > 0) {
-    attr(res, "ambiguous_infraspecies_2") <- all_ambiguous_infrasp2
+  all_ambiguous <- Filter(Negate(is.null), all_ambiguous)
+
+  consolidated_ambiguous <- if (length(all_ambiguous) > 0) {
+    dplyr::bind_rows(all_ambiguous)
+  } else {
+    NULL
+  }
+
+  # Combinar resultados
+  res <- dplyr::bind_rows(res_with_attrs)
+
+  # Re-adjuntar atributo consolidado
+  if (!is.null(consolidated_ambiguous) && nrow(consolidated_ambiguous) > 0) {
+    attr(res, "ambiguous_infraspecies_2") <- consolidated_ambiguous
   }
 
   return(res)

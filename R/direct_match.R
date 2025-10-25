@@ -29,6 +29,7 @@ direct_match <- function(df,
   # ==========================================================================
   # Determinar si la base de datos soporta infraspecies_2
   use_infraspecies_2 <- (source == "original")
+
   # Basic required columns (always needed)
   required_cols <- c(
     'Orig.Genus',
@@ -94,14 +95,14 @@ direct_match <- function(df,
 
   if (use_infraspecies_2) {
     target_prepared <-
-    target_df |>
+      target_df |>
       dplyr::mutate(
         tag = toupper(tag),
         tag_2 = dplyr::if_else(!is.na(infraspecies_2), "F.", NA_character_)
       )
   }  else{
     target_prepared <-
-    target_df |>
+      target_df |>
       dplyr::mutate(
         tag_acc = toupper(tag_acc)
       )
@@ -127,7 +128,7 @@ direct_match <- function(df,
   # ==========================================================================
   if (source == "original") {
     matched_infra_1 <-
-    df |>
+      df |>
       dplyr::filter(Rank == 3) |>
       dplyr::semi_join(
         target_prepared,
@@ -146,7 +147,7 @@ direct_match <- function(df,
       )
   } else{
     matched_infra_1 <-
-    df |>
+      df |>
       dplyr::filter(Rank == 3) |>
       dplyr::semi_join(
         target_prepared,
@@ -169,6 +170,7 @@ direct_match <- function(df,
   # ==========================================================================
   # SECTION 6: Match Quaternomial Names (Rank 4 - Infraspecies Level 2)
   # ==========================================================================
+  # CRÍTICO: Solo intentar match Rank 4 si la base de datos lo soporta
 
   if (use_infraspecies_2) {
     matched_infra_2 <- df |>
@@ -192,59 +194,61 @@ direct_match <- function(df,
         Matched.Infra.Rank_2 = Orig.Infra.Rank_2,
         Matched.Infraspecies_2 = Orig.Infraspecies_2
       )
+  } else {
+    # Base de datos no soporta Rank 4: crear tibble vacío con estructura correcta
+    matched_infra_2 <- df |>
+      dplyr::filter(Rank == 4) |>
+      dplyr::slice(0)  # Mantener estructura pero sin filas
+
+    # Asegurar que tiene las columnas necesarias
+    if (nrow(matched_infra_2) == 0 && ncol(matched_infra_2) > 0) {
+      matched_infra_2 <- matched_infra_2 |>
+        dplyr::mutate(
+          Matched.Genus = NA_character_,
+          Matched.Species = NA_character_,
+          Matched.Infra.Rank = NA_character_,
+          Matched.Infraspecies = NA_character_,
+          Matched.Infra.Rank_2 = NA_character_,
+          Matched.Infraspecies_2 = NA_character_
+        )
+    }
   }
 
   # ==========================================================================
   # SECTION 7: Combine Matched Records
   # ==========================================================================
 
-  if (use_infraspecies_2) {
-    matched <- dplyr::bind_rows(
-      matched_bino,
-      matched_infra_1,
-      matched_infra_2
-    ) |>
-      dplyr::filter(
-        dplyr::case_when(
-          # Valid Rank 2: Genus + Species
-          !is.na(Matched.Genus) & !is.na(Matched.Species) & Rank == 2 ~ TRUE,
+  matched <- dplyr::bind_rows(
+    matched_bino,
+    matched_infra_1,
+    matched_infra_2
+  ) |>
+    dplyr::filter(
+      dplyr::case_when(
+        # Valid Rank 2: Genus + Species
+        !is.na(Matched.Genus) & !is.na(Matched.Species) & Rank == 2 ~ TRUE,
 
-          # Valid Rank 3: Genus + Species + Infraspecies level 1
+        # Valid Rank 3: Genus + Species + Infraspecies level 1
+        !is.na(Matched.Genus) & !is.na(Matched.Species) &
+          !is.na(Matched.Infra.Rank) & !is.na(Matched.Infraspecies) &
+          Rank == 3 ~ TRUE,
+
+        # Valid Rank 4: Solo si use_infraspecies_2 = TRUE
+        use_infraspecies_2 &
           !is.na(Matched.Genus) & !is.na(Matched.Species) &
-            !is.na(Matched.Infra.Rank) & !is.na(Matched.Infraspecies) &
-            Rank == 3 ~ TRUE,
+          !is.na(Matched.Infra.Rank) & !is.na(Matched.Infraspecies) &
+          !is.na(Matched.Infra.Rank_2) & !is.na(Matched.Infraspecies_2) &
+          Rank == 4 ~ TRUE,
 
-          # Valid Rank 4: Genus + Species + Infraspecies level 1 + level 2
-          !is.na(Matched.Genus) & !is.na(Matched.Species) &
-            !is.na(Matched.Infra.Rank) & !is.na(Matched.Infraspecies) &
-            !is.na(Matched.Infra.Rank_2) & !is.na(Matched.Infraspecies_2) &
-            Rank == 4 ~ TRUE,
-
-          TRUE ~ FALSE
-        )
+        TRUE ~ FALSE
       )
-  } else {
-    matched <- dplyr::bind_rows(matched_bino, matched_infra_1) |>
-      dplyr::filter(
-        dplyr::case_when(
-          # Valid Rank 2: Genus + Species
-          !is.na(Matched.Genus) & !is.na(Matched.Species) & Rank == 2 ~ TRUE,
-
-          # Valid Rank 3: Genus + Species + Infraspecies level 1
-          !is.na(Matched.Genus) & !is.na(Matched.Species) &
-            !is.na(Matched.Infra.Rank) & !is.na(Matched.Infraspecies) &
-            Rank == 3 ~ TRUE,
-
-          TRUE ~ FALSE
-        )
-      )
-  }
+    )
 
   # ==========================================================================
   # SECTION 8: Identify Unmatched Records
   # ==========================================================================
 
-  if (source == "original") {
+  if (use_infraspecies_2) {
     # Unmatched Rank 2: Binomial names that didn't match
     unmatched_bino <- df |>
       dplyr::filter(Rank == 2) |>
@@ -288,7 +292,8 @@ direct_match <- function(df,
     )
 
   } else {
-    # When not using infraspecies_2, combine unmatched from Rank 2 and 3
+    # Base de datos actualizada: no soporta Rank 4
+    # Unmatched Rank 2
     unmatched_bino <- df |>
       dplyr::filter(Rank == 2) |>
       dplyr::anti_join(
@@ -296,7 +301,7 @@ direct_match <- function(df,
         by = c('Orig.Genus' = 'genus', 'Orig.Species' = 'species')
       )
 
-    # Unmatched Rank 3: Infraspecies level 1 that didn't match
+    # Unmatched Rank 3
     unmatched_infra_1 <- df |>
       dplyr::filter(Rank == 3) |>
       dplyr::anti_join(
@@ -308,21 +313,17 @@ direct_match <- function(df,
           'Orig.Infraspecies' = 'infraspecies'
         )
       )
+
+    # CRÍTICO: Todos los Rank 4 son automáticamente "unmatched"
+    # porque la base actualizada no los soporta
+    unmatched_rank4 <- df |>
+      dplyr::filter(Rank == 4)
+
     unmatched <- dplyr::bind_rows(
       unmatched_bino,
-      unmatched_infra_1
+      unmatched_infra_1,
+      unmatched_rank4  # ← Agregar todos los Rank 4 como no matcheados
     )
-    #unmatched <- df |>
-    #  dplyr::anti_join(
-    #    target_prepared,
-    #    by = c(
-    #      'Orig.Genus' = 'genus',
-    #      'Orig.Species' = 'species',
-    #      'Orig.Infra.Rank' = 'tag',#'tag_acc',
-    #      'Orig.Infraspecies' = 'infraspecies'
-    #    )
-    #  ) |>
-    #  dplyr::filter(!sorter %in% matched$sorter)
   }
 
   # ==========================================================================
@@ -335,7 +336,8 @@ direct_match <- function(df,
       "Row count mismatch in direct_match():\n",
       "Input: ", nrow(df), " rows\n",
       "Matched: ", nrow(matched), " rows\n",
-      "Unmatched: ", nrow(unmatched), " rows"
+      "Unmatched: ", nrow(unmatched), " rows\n",
+      "Database: ", source, " (use_infraspecies_2 = ", use_infraspecies_2, ")"
     )
   )
 
@@ -369,6 +371,9 @@ direct_match <- function(df,
 
   return(combined)
 }
+
+
+
 
 #' Match Genus Name
 #'
